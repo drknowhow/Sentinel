@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sentinel — Web Application Tester & Guide Creator</title>
   <meta name="description" content="Record web interactions, capture bugs, and generate step-by-step visual guides — no code required. A free, privacy-first Chrome extension.">
+  <meta property="og:title" content="Sentinel — Web Application Tester & Guide Creator">
+  <meta property="og:description" content="Record web interactions, capture bugs, and generate visual guides. Free, open-source Chrome extension.">
+  <meta property="og:image" content="icon.png">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="icon.png" type="image/png">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -20,9 +25,11 @@
       --border: #e2e8f0;
       --code-bg: #f1f5f9;
       --success: #16a34a;
+      --success-light: #dcfce7;
       --radius: 12px;
       --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
       --shadow-lg: 0 10px 25px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.04);
+      --shadow-xl: 0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.06);
     }
 
     @media (prefers-color-scheme: dark) {
@@ -38,6 +45,7 @@
         --border: #334155;
         --code-bg: #0f172a;
         --success: #4ade80;
+        --success-light: #14532d;
       }
     }
 
@@ -49,6 +57,7 @@
       color: var(--text);
       line-height: 1.7;
       font-size: 16px;
+      overflow-x: hidden;
     }
 
     /* ============ NAV ============ */
@@ -58,19 +67,19 @@
       left: 0;
       right: 0;
       height: 64px;
-      background: var(--surface);
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 0 32px;
       z-index: 100;
-      backdrop-filter: blur(12px);
-      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(248,250,252,0.8);
     }
 
     @media (prefers-color-scheme: dark) {
-      .navbar { background: rgba(30,41,59,0.85); }
+      .navbar { background: rgba(15,23,42,0.8); }
     }
 
     .nav-brand {
@@ -106,6 +115,17 @@
 
     .nav-links a:hover { color: var(--primary); }
 
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 8px;
+      color: var(--text);
+    }
+
+    .hamburger svg { display: block; }
+
     .btn {
       display: inline-flex;
       align-items: center;
@@ -125,7 +145,7 @@
       color: #fff;
     }
 
-    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
 
     .btn-outline {
       background: transparent;
@@ -133,45 +153,72 @@
       border: 1.5px solid var(--primary);
     }
 
-    .btn-outline:hover {
-      background: var(--primary-light);
+    .btn-outline:hover { background: var(--primary-light); }
+
+    .btn-sm { padding: 7px 16px; font-size: 13px; }
+
+    .btn-lg { padding: 14px 32px; font-size: 15px; border-radius: 10px; }
+
+    .btn-github {
+      background: var(--text);
+      color: var(--bg);
     }
 
-    .btn-sm {
-      padding: 7px 16px;
-      font-size: 13px;
-    }
+    .btn-github:hover { opacity: 0.9; transform: translateY(-1px); }
 
     /* ============ HERO ============ */
     .hero {
-      padding: 140px 32px 80px;
+      padding: 160px 32px 100px;
       text-align: center;
-      max-width: 860px;
+      max-width: 900px;
       margin: 0 auto;
+      position: relative;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(14,116,144,0.08) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .hero::before {
+        background: radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 70%);
+      }
     }
 
     .hero-icon {
-      width: 100px;
-      height: 100px;
-      border-radius: 20px;
-      margin-bottom: 28px;
+      width: 110px;
+      height: 110px;
+      border-radius: 24px;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-lg);
     }
 
     .hero h1 {
-      font-size: 3rem;
+      font-size: 3.2rem;
       font-weight: 800;
-      letter-spacing: -0.02em;
-      line-height: 1.15;
-      margin-bottom: 18px;
+      letter-spacing: -0.03em;
+      line-height: 1.12;
+      margin-bottom: 20px;
     }
 
     .hero h1 span { color: var(--primary); }
 
     .hero p {
-      font-size: 1.2rem;
+      font-size: 1.25rem;
       color: var(--text-muted);
-      max-width: 580px;
-      margin: 0 auto 32px;
+      max-width: 600px;
+      margin: 0 auto 36px;
+      line-height: 1.6;
     }
 
     .hero-buttons {
@@ -179,6 +226,7 @@
       gap: 14px;
       justify-content: center;
       flex-wrap: wrap;
+      margin-bottom: 40px;
     }
 
     .badge-row {
@@ -186,7 +234,6 @@
       gap: 8px;
       justify-content: center;
       flex-wrap: wrap;
-      margin-top: 36px;
     }
 
     .badge {
@@ -203,20 +250,17 @@
     }
 
     /* ============ SECTIONS ============ */
-    section {
-      padding: 80px 32px;
+    .section-wrap {
+      padding: 100px 32px;
+    }
+
+    .section-inner {
       max-width: 1100px;
       margin: 0 auto;
     }
 
-    section:nth-child(even) {
+    .section-alt {
       background: var(--surface);
-      max-width: 100%;
-    }
-
-    section:nth-child(even) .section-inner {
-      max-width: 1100px;
-      margin: 0 auto;
     }
 
     .section-label {
@@ -224,55 +268,65 @@
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.1em;
       color: var(--primary);
-      margin-bottom: 8px;
+      margin-bottom: 10px;
     }
 
     .section-title {
-      font-size: 2rem;
+      font-size: 2.2rem;
       font-weight: 800;
-      letter-spacing: -0.01em;
-      margin-bottom: 16px;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
     }
 
     .section-subtitle {
       font-size: 1.1rem;
       color: var(--text-muted);
       max-width: 600px;
-      margin-bottom: 48px;
+      margin-bottom: 56px;
+      line-height: 1.6;
     }
 
     /* ============ FEATURE GRID ============ */
     .feature-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
+      gap: 20px;
     }
 
     .feature-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 28px;
-      transition: box-shadow 0.2s, transform 0.2s;
+      padding: 28px 24px;
+      transition: box-shadow 0.25s, transform 0.25s;
     }
 
     .feature-card:hover {
-      box-shadow: var(--shadow-lg);
-      transform: translateY(-2px);
+      box-shadow: var(--shadow-xl);
+      transform: translateY(-4px);
     }
 
     .feature-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
       background: var(--primary-light);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 22px;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
+    }
+
+    .feature-icon svg {
+      width: 24px;
+      height: 24px;
+      stroke: var(--primary);
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .feature-card h3 {
@@ -282,22 +336,78 @@
     }
 
     .feature-card p {
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       color: var(--text-muted);
       line-height: 1.6;
+    }
+
+    /* ============ PRIVACY BANNER ============ */
+    .privacy-banner {
+      background: var(--success-light);
+      border: 1px solid var(--success);
+      border-radius: var(--radius);
+      padding: 32px 36px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      margin-top: 48px;
+    }
+
+    .privacy-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      background: var(--success);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .privacy-icon svg {
+      width: 28px;
+      height: 28px;
+      stroke: #fff;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .privacy-banner h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .privacy-banner p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
     }
 
     /* ============ HOW IT WORKS ============ */
     .steps {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 32px;
-      counter-reset: step;
+      gap: 24px;
+      position: relative;
+    }
+
+    .steps::before {
+      content: '';
+      position: absolute;
+      top: 24px;
+      left: calc(12.5% + 24px);
+      right: calc(12.5% + 24px);
+      height: 2px;
+      background: var(--border);
+      z-index: 0;
     }
 
     .step {
       position: relative;
       text-align: center;
+      z-index: 1;
     }
 
     .step-number {
@@ -309,9 +419,14 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 800;
-      margin: 0 auto 16px;
+      margin: 0 auto 18px;
+      box-shadow: 0 0 0 4px var(--bg);
+    }
+
+    .section-alt .step-number {
+      box-shadow: 0 0 0 4px var(--surface);
     }
 
     .step h3 {
@@ -323,48 +438,14 @@
     .step p {
       font-size: 0.88rem;
       color: var(--text-muted);
-    }
-
-    /* ============ PRIVACY BANNER ============ */
-    .privacy-banner {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 36px 40px;
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      margin-top: 48px;
-    }
-
-    .privacy-icon {
-      width: 56px;
-      height: 56px;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #16a34a22, #16a34a11);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 28px;
-      flex-shrink: 0;
-    }
-
-    .privacy-banner h3 {
-      font-size: 1.1rem;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-
-    .privacy-banner p {
-      font-size: 0.92rem;
-      color: var(--text-muted);
+      line-height: 1.5;
     }
 
     /* ============ USE CASES ============ */
     .use-case-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
+      gap: 20px;
     }
 
     .use-case {
@@ -372,16 +453,32 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 28px;
+      transition: box-shadow 0.2s;
+    }
+
+    .use-case:hover { box-shadow: var(--shadow-lg); }
+
+    .use-case-label {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--primary);
+      background: var(--primary-light);
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 10px;
     }
 
     .use-case h3 {
-      font-size: 1rem;
+      font-size: 1.05rem;
       font-weight: 700;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
 
     .use-case p {
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       color: var(--text-muted);
       line-height: 1.6;
     }
@@ -397,12 +494,36 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 32px;
+      padding: 40px 32px;
       text-align: center;
+      transition: box-shadow 0.2s;
+    }
+
+    .install-card:hover { box-shadow: var(--shadow-lg); }
+
+    .install-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      background: var(--primary-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+
+    .install-icon svg {
+      width: 28px;
+      height: 28px;
+      stroke: var(--primary);
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .install-card h3 {
-      font-size: 1.1rem;
+      font-size: 1.15rem;
       font-weight: 700;
       margin-bottom: 8px;
     }
@@ -410,63 +531,170 @@
     .install-card p {
       font-size: 0.9rem;
       color: var(--text-muted);
-      margin-bottom: 20px;
+      margin-bottom: 24px;
+      line-height: 1.5;
     }
 
     /* ============ CTA ============ */
     .cta {
       text-align: center;
-      padding: 80px 32px;
+      padding: 100px 32px;
       max-width: 700px;
       margin: 0 auto;
     }
 
     .cta h2 {
-      font-size: 2rem;
+      font-size: 2.2rem;
       font-weight: 800;
+      letter-spacing: -0.02em;
       margin-bottom: 14px;
     }
 
     .cta p {
       color: var(--text-muted);
       font-size: 1.1rem;
-      margin-bottom: 28px;
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
     }
 
     /* ============ FOOTER ============ */
     footer {
       border-top: 1px solid var(--border);
-      padding: 32px;
+      padding: 40px 32px;
       text-align: center;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
       font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover { color: var(--primary); }
+
+    .footer-copy {
+      font-size: 13px;
       color: var(--text-muted);
     }
 
-    footer a {
-      color: var(--primary);
-      text-decoration: none;
+    /* ============ MOBILE NAV ============ */
+    .mobile-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 200;
+      opacity: 0;
+      transition: opacity 0.3s;
     }
 
-    footer a:hover { text-decoration: underline; }
+    .mobile-overlay.active {
+      opacity: 1;
+    }
+
+    .mobile-menu {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 280px;
+      height: 100vh;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      z-index: 201;
+      padding: 24px;
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mobile-menu.active {
+      transform: translateX(0);
+    }
+
+    .mobile-menu-close {
+      align-self: flex-end;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 8px;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .mobile-menu a {
+      display: block;
+      padding: 12px 16px;
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+
+    .mobile-menu a:hover { background: var(--primary-light); }
+
+    .mobile-menu .btn { justify-content: center; margin-top: 8px; }
 
     /* ============ RESPONSIVE ============ */
     @media (max-width: 900px) {
       .feature-grid { grid-template-columns: repeat(2, 1fr); }
       .steps { grid-template-columns: repeat(2, 1fr); }
-      .install-options { grid-template-columns: 1fr; }
+      .steps::before { display: none; }
+      .install-options { grid-template-columns: 1fr; max-width: 440px; margin: 0 auto; }
+      .section-title { font-size: 1.8rem; }
+    }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hamburger { display: block; }
+      .mobile-overlay, .mobile-menu { display: block; }
     }
 
     @media (max-width: 600px) {
       .navbar { padding: 0 16px; }
-      .nav-links { gap: 16px; }
-      .hero { padding: 120px 20px 60px; }
-      .hero h1 { font-size: 2rem; }
-      .hero p { font-size: 1rem; }
+      .hero { padding: 120px 20px 70px; }
+      .hero h1 { font-size: 2.1rem; }
+      .hero p { font-size: 1.05rem; }
+      .hero-icon { width: 80px; height: 80px; border-radius: 18px; }
       .feature-grid { grid-template-columns: 1fr; }
-      .steps { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: 1fr; gap: 32px; }
       .use-case-grid { grid-template-columns: 1fr; }
-      .privacy-banner { flex-direction: column; text-align: center; }
-      section { padding: 60px 20px; }
+      .privacy-banner { flex-direction: column; text-align: center; padding: 24px; }
+      .section-wrap { padding: 70px 20px; }
+      .cta { padding: 70px 20px; }
+      .cta h2 { font-size: 1.8rem; }
+    }
+
+    /* ============ ANIMATIONS ============ */
+    .fade-up {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+
+    .fade-up.visible {
+      opacity: 1;
+      transform: translateY(0);
     }
   </style>
 </head>
@@ -475,7 +703,7 @@
   <!-- NAV -->
   <nav class="navbar">
     <a href="#" class="nav-brand">
-      <img src="../icon.png" alt="Sentinel">
+      <img src="icon.png" alt="Sentinel">
       Sentinel
     </a>
     <ul class="nav-links">
@@ -483,18 +711,38 @@
       <li><a href="#how-it-works">How It Works</a></li>
       <li><a href="#use-cases">Use Cases</a></li>
       <li><a href="#install">Install</a></li>
-      <li><a href="../STARTUP_GUIDE.html" class="btn btn-primary btn-sm">User Guide</a></li>
+      <li><a href="guide.html" class="btn btn-primary btn-sm">User Guide</a></li>
     </ul>
+    <button class="hamburger" onclick="toggleMobile()" aria-label="Menu">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
   </nav>
+
+  <!-- MOBILE MENU -->
+  <div class="mobile-overlay" id="mobileOverlay" onclick="toggleMobile()"></div>
+  <div class="mobile-menu" id="mobileMenu">
+    <button class="mobile-menu-close" onclick="toggleMobile()" aria-label="Close menu">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <a href="#features" onclick="toggleMobile()">Features</a>
+    <a href="#how-it-works" onclick="toggleMobile()">How It Works</a>
+    <a href="#use-cases" onclick="toggleMobile()">Use Cases</a>
+    <a href="#install" onclick="toggleMobile()">Install</a>
+    <a href="guide.html" class="btn btn-primary">User Guide</a>
+  </div>
 
   <!-- HERO -->
   <div class="hero">
-    <img src="../icon.png" alt="Sentinel" class="hero-icon">
-    <h1>Test, Document &<br><span>Ship with Confidence</span></h1>
+    <img src="icon.png" alt="Sentinel" class="hero-icon">
+    <h1>Test, Document &amp;<br><span>Ship with Confidence</span></h1>
     <p>Record web interactions, capture bugs, and generate step-by-step visual guides — no code required. A free, privacy-first Chrome extension.</p>
     <div class="hero-buttons">
-      <a href="#install" class="btn btn-primary">Get Sentinel</a>
-      <a href="../STARTUP_GUIDE.html" class="btn btn-outline">Read the Guide</a>
+      <a href="#install" class="btn btn-primary btn-lg">Get Sentinel</a>
+      <a href="guide.html" class="btn btn-outline btn-lg">Read the Guide</a>
     </div>
     <div class="badge-row">
       <span class="badge">Chrome MV3</span>
@@ -507,152 +755,202 @@
   </div>
 
   <!-- FEATURES -->
-  <section id="features">
-    <span class="section-label">Features</span>
-    <h2 class="section-title">Everything you need for web QA</h2>
-    <p class="section-subtitle">Sentinel replaces scattered tools with one lightweight extension that lives in your browser's side panel.</p>
+  <div class="section-wrap" id="features">
+    <div class="section-inner">
+      <span class="section-label">Features</span>
+      <h2 class="section-title">Everything you need for web QA</h2>
+      <p class="section-subtitle">Sentinel replaces scattered tools with one lightweight extension that lives in your browser's side panel.</p>
 
-    <div class="feature-grid">
-      <div class="feature-card">
-        <div class="feature-icon">&#9679;</div>
-        <h3>Action Recording</h3>
-        <p>Captures clicks, typing, scrolls, form submissions, and navigation automatically with intelligent noise reduction — debouncing, deduplication, and layout container filtering.</p>
+      <div class="feature-grid">
+        <div class="feature-card fade-up">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="var(--primary)" stroke="none"/></svg>
+          </div>
+          <h3>Action Recording</h3>
+          <p>Captures clicks, typing, scrolls, form submissions, and navigation automatically with intelligent noise reduction and smart selectors.</p>
+        </div>
+        <div class="feature-card fade-up">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+          <h3>Session Playback</h3>
+          <p>Replay recorded sessions at 0.5x to 4x speed. Step-by-step mode lets you pause after each action with element highlighting.</p>
+        </div>
+        <div class="feature-card fade-up">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          </div>
+          <h3>Assertion Testing</h3>
+          <p>Add assertions to any step — visible, hidden, text-contains, text-equals, has-class, or exists. Get a clear pass/fail test report.</p>
+        </div>
+        <div class="feature-card fade-up">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <h3>Visual Guide Export</h3>
+          <p>Turn recordings into polished, standalone HTML guides with embedded screenshots. Edit titles, reorder steps, and share anywhere.</p>
+        </div>
+        <div class="feature-card fade-up">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <h3>Bug Tracking</h3>
+          <p>Auto-capture console errors, unhandled exceptions, failed network requests, and CSP violations. Export styled issue reports.</p>
+        </div>
+        <div class="feature-card fade-up">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <h3>Video Recording</h3>
+          <p>Capture up to 5 minutes of video per clip as WebM. Download clips or attach them to your bug reports for clear reproduction.</p>
+        </div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#9654;</div>
-        <h3>Session Playback</h3>
-        <p>Replay recorded sessions at 0.5x to 4x speed. Step-by-step mode lets you pause after each action with element highlighting so you can inspect state.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#9745;</div>
-        <h3>Assertion Testing</h3>
-        <p>Add assertions to any step — visible, hidden, text-contains, text-equals, has-class, or exists. Get a clear pass/fail report with actual vs. expected values.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#128214;</div>
-        <h3>Visual Guide Export</h3>
-        <p>Turn recordings into polished, standalone HTML guides with embedded screenshots. Edit titles, reorder steps, add notes, and share via email or Slack.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#128027;</div>
-        <h3>Bug Tracking</h3>
-        <p>Auto-capture console errors, unhandled exceptions, failed network requests, and CSP violations. Annotate them as bug reports with severity levels.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#127909;</div>
-        <h3>Video Recording</h3>
-        <p>Capture up to 5 minutes of video per clip as WebM. Download clips or attach them to your bug reports for unambiguous reproduction steps.</p>
+
+      <div class="privacy-banner fade-up">
+        <div class="privacy-icon">
+          <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div>
+          <h3>100% Local &amp; Private</h3>
+          <p>Sentinel makes zero network requests. No analytics, no telemetry, no external servers. Your sessions, screenshots, and reports never leave your machine unless you explicitly export them.</p>
+        </div>
       </div>
     </div>
-
-    <div class="privacy-banner">
-      <div class="privacy-icon">&#128274;</div>
-      <div>
-        <h3>100% Local & Private</h3>
-        <p>Sentinel makes zero network requests. No analytics, no telemetry, no external servers. Your sessions, screenshots, and reports never leave your machine unless you explicitly export them.</p>
-      </div>
-    </div>
-  </section>
+  </div>
 
   <!-- HOW IT WORKS -->
-  <section id="how-it-works">
+  <div class="section-wrap section-alt" id="how-it-works">
     <div class="section-inner">
       <span class="section-label">How It Works</span>
       <h2 class="section-title">Four steps to better QA</h2>
       <p class="section-subtitle">No setup, no accounts, no configuration files. Install, open the side panel, and start recording.</p>
 
       <div class="steps">
-        <div class="step">
+        <div class="step fade-up">
           <div class="step-number">1</div>
           <h3>Record</h3>
           <p>Click the record button and interact with your web app. Sentinel captures every action with smart selectors and screenshots.</p>
         </div>
-        <div class="step">
+        <div class="step fade-up">
           <div class="step-number">2</div>
           <h3>Review</h3>
           <p>Browse your recorded steps in the side panel. Each step shows what happened, where, and when — with a screenshot.</p>
         </div>
-        <div class="step">
+        <div class="step fade-up">
           <div class="step-number">3</div>
           <h3>Test</h3>
           <p>Add assertions, then play back the session. Sentinel simulates every action and evaluates your assertions, producing a test report.</p>
         </div>
-        <div class="step">
+        <div class="step fade-up">
           <div class="step-number">4</div>
           <h3>Export</h3>
           <p>Generate a standalone HTML guide, an issue report, or download a video clip. Share with your team — no logins needed.</p>
         </div>
       </div>
     </div>
-  </section>
+  </div>
 
   <!-- USE CASES -->
-  <section id="use-cases">
-    <span class="section-label">Use Cases</span>
-    <h2 class="section-title">Built for teams who ship</h2>
-    <p class="section-subtitle">Whether you're a solo dev or part of a QA team, Sentinel fits your workflow.</p>
+  <div class="section-wrap" id="use-cases">
+    <div class="section-inner">
+      <span class="section-label">Use Cases</span>
+      <h2 class="section-title">Built for teams who ship</h2>
+      <p class="section-subtitle">Whether you're a solo developer or part of a QA team, Sentinel fits your workflow.</p>
 
-    <div class="use-case-grid">
-      <div class="use-case">
-        <h3>QA & Testing</h3>
-        <p>Record user flows, add assertions, and run regression playback. Export test reports as evidence that critical paths work before every release.</p>
-      </div>
-      <div class="use-case">
-        <h3>Onboarding & Documentation</h3>
-        <p>Walk through your app once and export a visual step-by-step guide. New team members get screenshots and descriptions instead of outdated wikis.</p>
-      </div>
-      <div class="use-case">
-        <h3>Bug Reproduction</h3>
-        <p>Enable error tracking, reproduce the bug, and export an issue report with automatic screenshots, console errors, and network failures attached.</p>
-      </div>
-      <div class="use-case">
-        <h3>Client Handoff</h3>
-        <p>Record a walkthrough of completed features and export a branded HTML guide. Clients see exactly what was built — no staging environment needed.</p>
+      <div class="use-case-grid">
+        <div class="use-case fade-up">
+          <span class="use-case-label">QA Teams</span>
+          <h3>Regression Testing</h3>
+          <p>Record critical user flows, add assertions, and run regression playback before every release. Export test reports as evidence that paths work.</p>
+        </div>
+        <div class="use-case fade-up">
+          <span class="use-case-label">Engineering</span>
+          <h3>Onboarding &amp; Documentation</h3>
+          <p>Walk through your app once and export a visual step-by-step guide. New team members get screenshots and descriptions instead of outdated wikis.</p>
+        </div>
+        <div class="use-case fade-up">
+          <span class="use-case-label">Support</span>
+          <h3>Bug Reproduction</h3>
+          <p>Enable error tracking, reproduce the bug, and export an issue report with screenshots, console errors, and network failures attached.</p>
+        </div>
+        <div class="use-case fade-up">
+          <span class="use-case-label">Product</span>
+          <h3>Client Handoff</h3>
+          <p>Record a walkthrough of completed features and export an HTML guide. Clients see exactly what was built — no staging environment needed.</p>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
 
   <!-- INSTALL -->
-  <section id="install">
+  <div class="section-wrap section-alt" id="install">
     <div class="section-inner">
       <span class="section-label">Get Started</span>
       <h2 class="section-title">Install Sentinel</h2>
       <p class="section-subtitle">Choose your preferred installation method.</p>
 
       <div class="install-options">
-        <div class="install-card">
+        <div class="install-card fade-up">
+          <div class="install-icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+          </div>
           <h3>Chrome Web Store</h3>
-          <p>One-click install from the Chrome Web Store. Automatic updates included.</p>
-          <a href="#" class="btn btn-primary" id="cws-link">Coming Soon</a>
+          <p>One-click install from the Chrome Web Store.<br>Automatic updates included.</p>
+          <a href="#" class="btn btn-primary btn-lg" id="cws-link">Coming Soon</a>
         </div>
-        <div class="install-card">
+        <div class="install-card fade-up">
+          <div class="install-icon">
+            <svg viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          </div>
           <h3>Build from Source</h3>
-          <p>Clone the repo, build with npm, and load as an unpacked extension for development.</p>
-          <a href="https://github.com/drknowhow/Sentinel" class="btn btn-outline">View on GitHub</a>
+          <p>Clone the repo, build with npm, and load as an unpacked extension.</p>
+          <a href="https://github.com/drknowhow/Sentinel" class="btn btn-github btn-lg">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            View on GitHub
+          </a>
         </div>
       </div>
     </div>
-  </section>
+  </div>
 
   <!-- CTA -->
   <div class="cta">
     <h2>Ready to streamline your QA?</h2>
     <p>Read the full user guide to learn about every feature — from recording to assertions to video capture.</p>
-    <a href="../STARTUP_GUIDE.html" class="btn btn-primary">Read the User Guide</a>
+    <div class="cta-buttons">
+      <a href="guide.html" class="btn btn-primary btn-lg">Read the User Guide</a>
+      <a href="https://github.com/drknowhow/Sentinel" class="btn btn-outline btn-lg">Star on GitHub</a>
+    </div>
   </div>
 
   <!-- FOOTER -->
   <footer>
-    <p>
-      Sentinel &mdash; Open source, privacy-first web testing.
-      &nbsp;&middot;&nbsp;
+    <div class="footer-links">
       <a href="https://github.com/drknowhow/Sentinel">GitHub</a>
-      &nbsp;&middot;&nbsp;
-      <a href="../PRIVACY_POLICY.md">Privacy Policy</a>
-      &nbsp;&middot;&nbsp;
-      <a href="../STARTUP_GUIDE.html">User Guide</a>
-    </p>
+      <a href="guide.html">User Guide</a>
+      <a href="privacy.md">Privacy Policy</a>
+    </div>
+    <p class="footer-copy">Sentinel &mdash; Open source, privacy-first web testing.</p>
   </footer>
+
+  <script>
+    // Mobile menu
+    function toggleMobile() {
+      document.getElementById('mobileOverlay').classList.toggle('active');
+      document.getElementById('mobileMenu').classList.toggle('active');
+    }
+
+    // Scroll animations
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+  </script>
 
 </body>
 </html>
