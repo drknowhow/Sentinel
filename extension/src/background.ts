@@ -6,8 +6,8 @@ import { generateGuideHTML, generateIssueReportHTML } from './lib/guideHtml';
 // ── WebSocket Bridge (MCP ↔ Extension) ──
 
 const WS_URL = 'ws://127.0.0.1:18925';
-const WS_RECONNECT_MIN = 10000;
-const WS_RECONNECT_MAX = 60000;
+const WS_RECONNECT_MIN = 3000;
+const WS_RECONNECT_MAX = 30000;
 const WS_KEEPALIVE_INTERVAL = 'sentinel-ws-keepalive';
 
 let ws: WebSocket | null = null;

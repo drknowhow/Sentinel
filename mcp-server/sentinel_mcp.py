@@ -47,11 +47,11 @@ async def _start_ws_server() -> None:
 async def _send_command(command: str, payload: dict | None = None, timeout: float = 30.0) -> dict:
     """Send a command to the extension and wait for a response."""
     if not _ws_client:
-        # Wait up to 5s for a client to connect
+        # Wait up to 35s for the extension to connect (covers full reconnect backoff window)
         try:
-            await asyncio.wait_for(_client_connected.wait(), timeout=5.0)
+            await asyncio.wait_for(_client_connected.wait(), timeout=35.0)
         except asyncio.TimeoutError:
-            return {"success": False, "error": "Extension not connected"}
+            return {"success": False, "error": "Extension not connected — open Chrome, load the Sentinel extension, and ensure the side panel is enabled"}
 
     msg_id = str(uuid.uuid4())
     future: asyncio.Future[dict] = asyncio.get_event_loop().create_future()
