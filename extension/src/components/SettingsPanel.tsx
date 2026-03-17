@@ -10,21 +10,26 @@ interface McpServerInfo {
   status: McpStatus;
 }
 
-const WS_URL = 'ws://127.0.0.1:18925';
-
 function useMcpStatus() {
   const [status, setStatus] = useState<McpStatus>('unknown');
 
+  // Ask the background service worker for its actual WS connection state.
+  // Previously this opened a probe WebSocket directly, which would temporarily
+  // displace the background's persistent connection in sentinel_mcp.py.
   const checkStatus = useCallback(() => {
-    try {
-      const ws = new WebSocket(WS_URL);
-      const timer = setTimeout(() => { ws.close(); setStatus('disconnected'); }, 3000);
-      ws.onopen = () => { clearTimeout(timer); setStatus('connected'); ws.close(); };
-      ws.onerror = () => { clearTimeout(timer); setStatus('disconnected'); };
-    } catch {
-      setStatus('error');
-    }
+    chrome.runtime.sendMessage({ type: 'WS_GET_STATUS' })
+      .then((res: { connected: boolean }) => {
+        setStatus(res?.connected ? 'connected' : 'disconnected');
+      })
+      .catch(() => setStatus('error'));
   }, []);
+
+  const reconnect = useCallback(() => {
+    setStatus('unknown');
+    chrome.runtime.sendMessage({ type: 'WS_RECONNECT' })
+      .then(() => setTimeout(checkStatus, 1500))
+      .catch(() => setStatus('error'));
+  }, [checkStatus]);
 
   useEffect(() => {
     checkStatus();
@@ -32,7 +37,7 @@ function useMcpStatus() {
     return () => clearInterval(interval);
   }, [checkStatus]);
 
-  return { status, refresh: checkStatus };
+  return { status, refresh: checkStatus, reconnect };
 }
 
 // ── Status Badge ──
@@ -554,7 +559,7 @@ function AiToolsSection() {
 // ── Main Settings Panel ──
 
 export default function SettingsPanel() {
-  const { status: wsStatus, refresh: refreshWs } = useMcpStatus();
+  const { status: wsStatus, refresh: refreshWs, reconnect: reconnectWs } = useMcpStatus();
   const { status: launchStatus, busy, start, stop, remove, refresh: refreshLauncher } = useMcpLauncher();
   const [extId] = useState(() => chrome.runtime.id);
   const [idCopied, setIdCopied] = useState(false);
@@ -641,6 +646,15 @@ export default function SettingsPanel() {
                     className="px-2 py-1 text-[10px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-300 rounded transition-colors"
                   >
                     {busy ? '…' : 'Start'}
+                  </button>
+                )}
+                {(wsStatus === 'disconnected' || wsStatus === 'error') && (
+                  <button
+                    onClick={reconnectWs}
+                    className="px-2 py-1 text-[10px] font-semibold text-cyan-600 hover:text-cyan-700 border border-gray-200 rounded transition-colors"
+                    title="Force reconnect to MCP server"
+                  >
+                    Reconnect
                   </button>
                 )}
                 <button

@@ -67,6 +67,9 @@ export type MessageType =
   | 'START_FEATURE_INSPECTION'
   | 'EXPORT_EDITED_GUIDE'
   | 'GET_TAB_CAPTURE_STREAM_ID'
+  // ── MCP WebSocket bridge control ──
+  | 'WS_GET_STATUS'
+  | 'WS_RECONNECT'
   // ── MCP Launcher (native messaging) ──
   | 'LAUNCH_MCP_SERVER'
   | 'STOP_MCP_SERVER'

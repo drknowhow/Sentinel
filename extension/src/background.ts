@@ -540,6 +540,19 @@ onMessage((message: Message, _sender, sendResponse) => {
       break;
     }
 
+    case 'WS_GET_STATUS': {
+      sendResponse({ connected: ws?.readyState === WebSocket.OPEN });
+      break;
+    }
+
+    case 'WS_RECONNECT': {
+      wsReconnectDelay = WS_RECONNECT_MIN;
+      ws?.close();
+      wsConnect();
+      sendResponse({ ok: true });
+      break;
+    }
+
     case 'LAUNCH_MCP_SERVER':
     case 'STOP_MCP_SERVER':
     case 'MCP_LAUNCHER_STATUS':
