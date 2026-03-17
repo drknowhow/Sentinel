@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sentinel — Web Application Tester & Guide Creator</title>
-  <meta name="description" content="Record web interactions, capture bugs, and generate step-by-step visual guides — no code required. A free, privacy-first Chrome extension.">
-  <meta property="og:title" content="Sentinel — Web Application Tester & Guide Creator">
-  <meta property="og:description" content="Record web interactions, capture bugs, and generate visual guides. Free, open-source Chrome extension.">
+  <title>Sentinel — AI-Powered Browser Testing & Guide Creator</title>
+  <meta name="description" content="Tell your AI to test your app and write a guide. Sentinel connects Claude, Cursor, and Copilot to your browser via MCP — plus manual recording, bug tracking, and video capture. Free, privacy-first Chrome extension.">
+  <meta property="og:title" content="Sentinel — AI-Powered Browser Testing & Guide Creator">
+  <meta property="og:description" content="Connect your AI assistant to your browser. Record, test, document, and debug — manually or fully automated via MCP. Free, open-source Chrome extension.">
   <meta property="og:image" content="icon.png">
   <meta property="og:type" content="website">
   <link rel="icon" href="icon.png" type="image/png">
@@ -717,6 +717,7 @@
       <li><a href="#how-it-works">How It Works</a></li>
       <li><a href="#use-cases">Use Cases</a></li>
       <li><a href="#install">Install</a></li>
+      <li><a href="https://github.com/sponsors/drknowhow" style="color:#9d174d; font-weight:600;">♥ Sponsor</a></li>
       <li><a href="guide.html" class="btn btn-primary btn-sm">User Guide</a></li>
     </ul>
     <button class="hamburger" onclick="toggleMobile()" aria-label="Menu">
@@ -738,25 +739,26 @@
     <a href="#how-it-works" onclick="toggleMobile()">How It Works</a>
     <a href="#use-cases" onclick="toggleMobile()">Use Cases</a>
     <a href="#install" onclick="toggleMobile()">Install</a>
+    <a href="https://github.com/sponsors/drknowhow" onclick="toggleMobile()" style="color:#9d174d; font-weight:600;">♥ Sponsor</a>
     <a href="guide.html" class="btn btn-primary">User Guide</a>
   </div>
 
   <!-- HERO -->
   <div class="hero">
     <img src="icon.png" alt="Sentinel" class="hero-icon">
-    <h1>Test, Document &amp;<br><span>Ship with Confidence</span></h1>
-    <p>Record web interactions, capture bugs, and generate step-by-step visual guides — no code required. A free, privacy-first Chrome extension.</p>
+    <h1>Your AI-Powered<br><span>Browser Testing Co-pilot</span></h1>
+    <p>Tell Claude, Cursor, or Copilot to test your app and write a guide — automatically. Or record manually, track bugs, and export visual docs. Free, privacy-first Chrome extension.</p>
     <div class="hero-buttons">
-      <a href="#install" class="btn btn-primary btn-lg">Get Sentinel</a>
+      <a href="#install" class="btn btn-primary btn-lg">Get Sentinel Free</a>
       <a href="guide.html" class="btn btn-outline btn-lg">Read the Guide</a>
     </div>
     <div class="badge-row">
+      <span class="badge">AI-Powered (MCP)</span>
       <span class="badge">Chrome MV3</span>
-      <span class="badge">Side Panel</span>
       <span class="badge">React 19</span>
       <span class="badge">TypeScript 5.9</span>
-      <span class="badge">Tailwind v4</span>
       <span class="badge">100% Local</span>
+      <span class="badge">Open Source</span>
     </div>
   </div>
 
@@ -764,8 +766,8 @@
   <div class="section-wrap" id="features">
     <div class="section-inner">
       <span class="section-label">Features</span>
-      <h2 class="section-title">Everything you need for web QA</h2>
-      <p class="section-subtitle">Sentinel replaces scattered tools with one lightweight extension that lives in your browser's side panel.</p>
+      <h2 class="section-title">Everything you need for web QA — manual or AI-driven</h2>
+      <p class="section-subtitle">Sentinel replaces scattered tools with one lightweight extension. Use it manually or connect your AI assistant via MCP to fully automate testing and documentation.</p>
 
       <div class="feature-grid">
         <div class="feature-card fade-up">
@@ -891,6 +893,16 @@
           <h3>Client Handoff</h3>
           <p>Record a walkthrough of completed features and export an HTML guide. Clients see exactly what was built — no staging environment needed.</p>
         </div>
+        <div class="use-case fade-up">
+          <span class="use-case-label">AI Developer</span>
+          <h3>Autonomous Testing &amp; Docs</h3>
+          <p>Point your AI at a project folder and say <em>"test the checkout flow and write a guide."</em> Claude Code, Cursor, or Copilot navigate, record, assert, and export — hands-free via MCP.</p>
+        </div>
+        <div class="use-case fade-up">
+          <span class="use-case-label">Solo Dev</span>
+          <h3>Self-Review Before Shipping</h3>
+          <p>Run a quick AI investigation on your dev server to surface JS errors and network failures before opening a PR. Get a screenshot + error report in seconds.</p>
+        </div>
       </div>
     </div>
   </div>
@@ -928,12 +940,16 @@
 
   <!-- CTA -->
   <div class="cta">
-    <h2>Ready to streamline your QA?</h2>
-    <p>Read the full user guide to learn about every feature — from recording to assertions to video capture.</p>
+    <h2>Ready to put AI to work on your QA?</h2>
+    <p>Read the full user guide to get started — from manual recording to AI-driven automation via MCP.</p>
     <div class="cta-buttons">
       <a href="guide.html" class="btn btn-primary btn-lg">Read the User Guide</a>
       <a href="https://github.com/drknowhow/Sentinel" class="btn btn-outline btn-lg">Star on GitHub</a>
     </div>
+    <p style="margin-top:28px; font-size:0.9rem; color:var(--text-muted);">
+      Sentinel is free and open source. If it saves you time, consider
+      <a href="https://github.com/sponsors/drknowhow" style="color:var(--primary); font-weight:600; text-decoration:none;">sponsoring the project ♥</a>
+    </p>
   </div>
 
   <!-- FOOTER -->
