@@ -27,6 +27,10 @@ async def _ws_handler(websocket: WebSocketServerProtocol) -> None:
     try:
         async for raw in websocket:
             msg = json.loads(raw)
+            # A new stdio-mode instance taking over the port sends this signal
+            if msg.get("command") == "SHUTDOWN":
+                print("[sentinel-mcp] Shutdown signal received — releasing port for new instance")
+                sys.exit(0)
             msg_id = msg.get("id")
             if msg_id and msg_id in _pending:
                 _pending[msg_id].set_result(msg)
@@ -38,10 +42,31 @@ async def _ws_handler(websocket: WebSocketServerProtocol) -> None:
         print("[sentinel-mcp] Extension disconnected")
 
 
+async def _try_shutdown_existing() -> None:
+    """If a --ws-only server is holding port 18925, tell it to exit so we can take over.
+    The extension will reconnect to our new server within a few seconds."""
+    try:
+        ws = await asyncio.wait_for(websockets.connect("ws://127.0.0.1:18925"), timeout=1.5)
+        await ws.send(json.dumps({"command": "SHUTDOWN"}))
+        await ws.close()
+        await asyncio.sleep(1.0)  # wait for the port to be released
+        print("[sentinel-mcp] Signalled existing server to stop")
+    except Exception:
+        pass  # nothing running — fine
+
+
 async def _start_ws_server() -> None:
-    server = await websockets.serve(_ws_handler, "127.0.0.1", 18925)
-    print("[sentinel-mcp] WebSocket server listening on ws://127.0.0.1:18925")
-    await server.wait_closed()
+    # Retry a few times in case the previous server is still releasing the port
+    for attempt in range(6):
+        try:
+            server = await websockets.serve(_ws_handler, "127.0.0.1", 18925)
+            print("[sentinel-mcp] WebSocket server listening on ws://127.0.0.1:18925")
+            await server.wait_closed()
+            return
+        except OSError:
+            if attempt < 5:
+                await asyncio.sleep(0.5)
+    print("[sentinel-mcp] ERROR: Could not bind port 18925 after retries")
 
 
 async def _send_command(command: str, payload: dict | None = None, timeout: float = 30.0) -> dict:
@@ -280,7 +305,10 @@ async def sentinel_investigate(url: str, duration: int = 5) -> dict[str, Any]:
 # ── Entrypoint ──
 
 async def _main() -> None:
-    """Normal mode: WebSocket server + MCP stdio transport (spawned by AI client)."""
+    """Normal mode: WebSocket server + MCP stdio transport (spawned by AI client).
+    Sends a shutdown signal to any running --ws-only server first so it releases
+    port 18925. The extension reconnects to our new server automatically."""
+    await _try_shutdown_existing()
     asyncio.create_task(_start_ws_server())
     await mcp.run_stdio_async()
 
