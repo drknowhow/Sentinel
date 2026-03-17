@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel — Web Application Tester & Guide Creator</title>
+  <meta name="description" content="Record web interactions, capture bugs, and generate step-by-step visual guides — no code required. A free, privacy-first Chrome extension.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --primary: #0e7490;
+      --primary-light: #e0f2fe;
+      --primary-hover: #0c6577;
+      --accent: #0284c7;
+      --border: #e2e8f0;
+      --code-bg: #f1f5f9;
+      --success: #16a34a;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg: 0 10px 25px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.04);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --text: #e2e8f0;
+        --text-muted: #94a3b8;
+        --primary: #22d3ee;
+        --primary-light: #164e63;
+        --primary-hover: #06b6d4;
+        --accent: #38bdf8;
+        --border: #334155;
+        --code-bg: #0f172a;
+        --success: #4ade80;
+      }
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    /* ============ NAV ============ */
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 64px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      background: rgba(255,255,255,0.85);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .navbar { background: rgba(30,41,59,0.85); }
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .nav-brand img {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--primary); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 22px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: var(--primary-hover); }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--primary);
+      border: 1.5px solid var(--primary);
+    }
+
+    .btn-outline:hover {
+      background: var(--primary-light);
+    }
+
+    .btn-sm {
+      padding: 7px 16px;
+      font-size: 13px;
+    }
+
+    /* ============ HERO ============ */
+    .hero {
+      padding: 140px 32px 80px;
+      text-align: center;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    .hero-icon {
+      width: 100px;
+      height: 100px;
+      border-radius: 20px;
+      margin-bottom: 28px;
+    }
+
+    .hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 18px;
+    }
+
+    .hero h1 span { color: var(--primary); }
+
+    .hero p {
+      font-size: 1.2rem;
+      color: var(--text-muted);
+      max-width: 580px;
+      margin: 0 auto 32px;
+    }
+
+    .hero-buttons {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .badge-row {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 36px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid var(--border);
+    }
+
+    /* ============ SECTIONS ============ */
+    section {
+      padding: 80px 32px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    section:nth-child(even) {
+      background: var(--surface);
+      max-width: 100%;
+    }
+
+    section:nth-child(even) .section-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--primary);
+      margin-bottom: 8px;
+    }
+
+    .section-title {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin-bottom: 16px;
+    }
+
+    .section-subtitle {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin-bottom: 48px;
+    }
+
+    /* ============ FEATURE GRID ============ */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+
+    .feature-card:hover {
+      box-shadow: var(--shadow-lg);
+      transform: translateY(-2px);
+    }
+
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--primary-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 16px;
+    }
+
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .feature-card p {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ============ HOW IT WORKS ============ */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 32px;
+      counter-reset: step;
+    }
+
+    .step {
+      position: relative;
+      text-align: center;
+    }
+
+    .step-number {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 800;
+      margin: 0 auto 16px;
+    }
+
+    .step h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .step p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    /* ============ PRIVACY BANNER ============ */
+    .privacy-banner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 36px 40px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      margin-top: 48px;
+    }
+
+    .privacy-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #16a34a22, #16a34a11);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      flex-shrink: 0;
+    }
+
+    .privacy-banner h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .privacy-banner p {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+    }
+
+    /* ============ USE CASES ============ */
+    .use-case-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .use-case {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+    }
+
+    .use-case h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .use-case p {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ============ INSTALL SECTION ============ */
+    .install-options {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .install-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      text-align: center;
+    }
+
+    .install-card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .install-card p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    /* ============ CTA ============ */
+    .cta {
+      text-align: center;
+      padding: 80px 32px;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .cta h2 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 14px;
+    }
+
+    .cta p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      margin-bottom: 28px;
+    }
+
+    /* ============ FOOTER ============ */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px;
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    footer a:hover { text-decoration: underline; }
+
+    /* ============ RESPONSIVE ============ */
+    @media (max-width: 900px) {
+      .feature-grid { grid-template-columns: repeat(2, 1fr); }
+      .steps { grid-template-columns: repeat(2, 1fr); }
+      .install-options { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 600px) {
+      .navbar { padding: 0 16px; }
+      .nav-links { gap: 16px; }
+      .hero { padding: 120px 20px 60px; }
+      .hero h1 { font-size: 2rem; }
+      .hero p { font-size: 1rem; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: 1fr; }
+      .use-case-grid { grid-template-columns: 1fr; }
+      .privacy-banner { flex-direction: column; text-align: center; }
+      section { padding: 60px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="navbar">
+    <a href="#" class="nav-brand">
+      <img src="../icon.png" alt="Sentinel">
+      Sentinel
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#use-cases">Use Cases</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="../STARTUP_GUIDE.html" class="btn btn-primary btn-sm">User Guide</a></li>
+    </ul>
+  </nav>
+
+  <!-- HERO -->
+  <div class="hero">
+    <img src="../icon.png" alt="Sentinel" class="hero-icon">
+    <h1>Test, Document &<br><span>Ship with Confidence</span></h1>
+    <p>Record web interactions, capture bugs, and generate step-by-step visual guides — no code required. A free, privacy-first Chrome extension.</p>
+    <div class="hero-buttons">
+      <a href="#install" class="btn btn-primary">Get Sentinel</a>
+      <a href="../STARTUP_GUIDE.html" class="btn btn-outline">Read the Guide</a>
+    </div>
+    <div class="badge-row">
+      <span class="badge">Chrome MV3</span>
+      <span class="badge">Side Panel</span>
+      <span class="badge">React 19</span>
+      <span class="badge">TypeScript 5.9</span>
+      <span class="badge">Tailwind v4</span>
+      <span class="badge">100% Local</span>
+    </div>
+  </div>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <span class="section-label">Features</span>
+    <h2 class="section-title">Everything you need for web QA</h2>
+    <p class="section-subtitle">Sentinel replaces scattered tools with one lightweight extension that lives in your browser's side panel.</p>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#9679;</div>
+        <h3>Action Recording</h3>
+        <p>Captures clicks, typing, scrolls, form submissions, and navigation automatically with intelligent noise reduction — debouncing, deduplication, and layout container filtering.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#9654;</div>
+        <h3>Session Playback</h3>
+        <p>Replay recorded sessions at 0.5x to 4x speed. Step-by-step mode lets you pause after each action with element highlighting so you can inspect state.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#9745;</div>
+        <h3>Assertion Testing</h3>
+        <p>Add assertions to any step — visible, hidden, text-contains, text-equals, has-class, or exists. Get a clear pass/fail report with actual vs. expected values.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128214;</div>
+        <h3>Visual Guide Export</h3>
+        <p>Turn recordings into polished, standalone HTML guides with embedded screenshots. Edit titles, reorder steps, add notes, and share via email or Slack.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128027;</div>
+        <h3>Bug Tracking</h3>
+        <p>Auto-capture console errors, unhandled exceptions, failed network requests, and CSP violations. Annotate them as bug reports with severity levels.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#127909;</div>
+        <h3>Video Recording</h3>
+        <p>Capture up to 5 minutes of video per clip as WebM. Download clips or attach them to your bug reports for unambiguous reproduction steps.</p>
+      </div>
+    </div>
+
+    <div class="privacy-banner">
+      <div class="privacy-icon">&#128274;</div>
+      <div>
+        <h3>100% Local & Private</h3>
+        <p>Sentinel makes zero network requests. No analytics, no telemetry, no external servers. Your sessions, screenshots, and reports never leave your machine unless you explicitly export them.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="how-it-works">
+    <div class="section-inner">
+      <span class="section-label">How It Works</span>
+      <h2 class="section-title">Four steps to better QA</h2>
+      <p class="section-subtitle">No setup, no accounts, no configuration files. Install, open the side panel, and start recording.</p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <h3>Record</h3>
+          <p>Click the record button and interact with your web app. Sentinel captures every action with smart selectors and screenshots.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <h3>Review</h3>
+          <p>Browse your recorded steps in the side panel. Each step shows what happened, where, and when — with a screenshot.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <h3>Test</h3>
+          <p>Add assertions, then play back the session. Sentinel simulates every action and evaluates your assertions, producing a test report.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
+          <h3>Export</h3>
+          <p>Generate a standalone HTML guide, an issue report, or download a video clip. Share with your team — no logins needed.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- USE CASES -->
+  <section id="use-cases">
+    <span class="section-label">Use Cases</span>
+    <h2 class="section-title">Built for teams who ship</h2>
+    <p class="section-subtitle">Whether you're a solo dev or part of a QA team, Sentinel fits your workflow.</p>
+
+    <div class="use-case-grid">
+      <div class="use-case">
+        <h3>QA & Testing</h3>
+        <p>Record user flows, add assertions, and run regression playback. Export test reports as evidence that critical paths work before every release.</p>
+      </div>
+      <div class="use-case">
+        <h3>Onboarding & Documentation</h3>
+        <p>Walk through your app once and export a visual step-by-step guide. New team members get screenshots and descriptions instead of outdated wikis.</p>
+      </div>
+      <div class="use-case">
+        <h3>Bug Reproduction</h3>
+        <p>Enable error tracking, reproduce the bug, and export an issue report with automatic screenshots, console errors, and network failures attached.</p>
+      </div>
+      <div class="use-case">
+        <h3>Client Handoff</h3>
+        <p>Record a walkthrough of completed features and export a branded HTML guide. Clients see exactly what was built — no staging environment needed.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL -->
+  <section id="install">
+    <div class="section-inner">
+      <span class="section-label">Get Started</span>
+      <h2 class="section-title">Install Sentinel</h2>
+      <p class="section-subtitle">Choose your preferred installation method.</p>
+
+      <div class="install-options">
+        <div class="install-card">
+          <h3>Chrome Web Store</h3>
+          <p>One-click install from the Chrome Web Store. Automatic updates included.</p>
+          <a href="#" class="btn btn-primary" id="cws-link">Coming Soon</a>
+        </div>
+        <div class="install-card">
+          <h3>Build from Source</h3>
+          <p>Clone the repo, build with npm, and load as an unpacked extension for development.</p>
+          <a href="https://github.com/drknowhow/Sentinel" class="btn btn-outline">View on GitHub</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="cta">
+    <h2>Ready to streamline your QA?</h2>
+    <p>Read the full user guide to learn about every feature — from recording to assertions to video capture.</p>
+    <a href="../STARTUP_GUIDE.html" class="btn btn-primary">Read the User Guide</a>
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <p>
+      Sentinel &mdash; Open source, privacy-first web testing.
+      &nbsp;&middot;&nbsp;
+      <a href="https://github.com/drknowhow/Sentinel">GitHub</a>
+      &nbsp;&middot;&nbsp;
+      <a href="../PRIVACY_POLICY.md">Privacy Policy</a>
+      &nbsp;&middot;&nbsp;
+      <a href="../STARTUP_GUIDE.html">User Guide</a>
+    </p>
+  </footer>
+
+</body>
+</html>
