@@ -12,9 +12,10 @@ import TestReport from './components/TestReport';
 import FeatureRequestBuilder from './components/FeatureRequestBuilder';
 import IssueList from './components/IssueList';
 import Footer from './components/Footer';
+import SettingsPanel from './components/SettingsPanel';
 import type { Assertion } from './types';
 
-type FeedTab = 'steps' | 'errors' | 'videos';
+type FeedTab = 'steps' | 'errors' | 'videos' | 'settings';
 
 function TabButton({ active, onClick, label, count, activeColor }: {
   active: boolean; onClick: () => void; label: string; count: number; activeColor: string;
@@ -91,6 +92,7 @@ function App() {
         <TabButton active={feedTab === 'steps'} onClick={() => setFeedTab('steps')} label="Steps" count={currentSession.length} activeColor="bg-blue-100 text-blue-600" />
         <TabButton active={feedTab === 'errors'} onClick={() => setFeedTab('errors')} label="Errors" count={capturedErrors.length} activeColor="bg-red-100 text-red-600" />
         <TabButton active={feedTab === 'videos'} onClick={() => setFeedTab('videos')} label="Videos" count={video.clips.length + (video.isVideoRecording ? 1 : 0)} activeColor="bg-pink-100 text-pink-600" />
+        <TabButton active={feedTab === 'settings'} onClick={() => setFeedTab('settings')} label="Settings" count={0} activeColor="bg-gray-200 text-gray-700" />
       </div>
 
       {/* Main feed area */}
@@ -114,6 +116,7 @@ function App() {
             onDiscard={video.discardClip}
           />
         )}
+        {feedTab === 'settings' && <SettingsPanel />}
       </div>
 
       {/* Collapsible panels */}

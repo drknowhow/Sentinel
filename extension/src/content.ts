@@ -810,7 +810,7 @@ chrome.storage.local.get(['isRecording', 'isErrorTracking'], (result) => {
 
 // ── Message Listener ──
 
-chrome.runtime.onMessage.addListener((message: Message) => {
+chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
   switch (message.type) {
     case 'START_RECORDING':
       startRecording();
@@ -858,5 +858,86 @@ chrome.runtime.onMessage.addListener((message: Message) => {
     case 'STOP_ERROR_TRACKING':
       stopErrorTracking();
       break;
+
+    // ── API Handlers (MCP bridge) ──
+
+    case 'API_INJECT_ACTION': {
+      const p = message.payload as { type: string; selector: string; value?: string };
+      const el = document.querySelector(p.selector) as HTMLElement;
+      if (!el) {
+        sendResponse({ success: false, error: `Element not found: ${p.selector}` });
+        return true;
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      try {
+        if (p.type === 'click') {
+          el.click();
+        } else if (p.type === 'dblclick') {
+          el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        } else if (p.type === 'input') {
+          (el as HTMLInputElement).value = p.value || '';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else if (p.type === 'keydown') {
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: p.value || '', bubbles: true }));
+        } else if (p.type === 'submit') {
+          if (el instanceof HTMLFormElement) el.requestSubmit();
+        } else if (p.type === 'scroll') {
+          const [x, y] = (p.value || '0,0').split(',').map(Number);
+          window.scrollTo({ left: x, top: y, behavior: 'smooth' });
+        }
+        sendResponse({ success: true, description: describeAction(p.type, el, p.value) });
+      } catch (err) {
+        sendResponse({ success: false, error: String(err) });
+      }
+      return true;
+    }
+
+    case 'API_WAIT_FOR_ELEMENT': {
+      const p = message.payload as { selector: string; timeout?: number };
+      const timeout = p.timeout || 10000;
+      const existing = document.querySelector(p.selector);
+      if (existing) {
+        sendResponse({ found: true, text: (existing.textContent || '').trim().slice(0, 200) });
+        return true;
+      }
+      let resolved = false;
+      const observer = new MutationObserver(() => {
+        const el = document.querySelector(p.selector);
+        if (el && !resolved) {
+          resolved = true;
+          observer.disconnect();
+          sendResponse({ found: true, text: (el.textContent || '').trim().slice(0, 200) });
+        }
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          observer.disconnect();
+          sendResponse({ found: false });
+        }
+      }, timeout);
+      return true;
+    }
+
+    case 'API_EVALUATE_SELECTOR': {
+      const p = message.payload as { selector: string };
+      const el = document.querySelector(p.selector) as HTMLElement | null;
+      if (!el) {
+        sendResponse({ exists: false });
+        return true;
+      }
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      sendResponse({
+        exists: true,
+        text: (el.textContent || '').trim().slice(0, 200),
+        tagName: el.tagName.toLowerCase(),
+        visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+        rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+      });
+      return true;
+    }
   }
 });

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sentinel": {
+      "command": "python",
+      "args": ["mcp-server/sentinel_mcp.py"],
+      "cwd": "U:/1. Projects/Sentinel"
+    }
+  }
+}

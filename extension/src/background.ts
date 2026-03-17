@@ -1,7 +1,266 @@
-import type { Action, Message, Assertion, AssertionResult, PlaybackConfig, CapturedError, GuideEdits } from './types';
+import type { Action, Message, Assertion, AssertionResult, PlaybackConfig, CapturedError, GuideEdits, Issue } from './types';
 import { onMessage, sendToTab } from './lib/messages';
 import { saveIssue, deleteIssue, getIssues } from './lib/storage';
 import { generateGuideHTML, generateIssueReportHTML } from './lib/guideHtml';
+
+// ── WebSocket Bridge (MCP ↔ Extension) ──
+
+const WS_URL = 'ws://127.0.0.1:18925';
+const WS_RECONNECT_MIN = 10000;
+const WS_RECONNECT_MAX = 60000;
+const WS_KEEPALIVE_INTERVAL = 'sentinel-ws-keepalive';
+
+let ws: WebSocket | null = null;
+let wsReconnectDelay = WS_RECONNECT_MIN;
+
+function wsConnect() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+  try {
+    ws = new WebSocket(WS_URL);
+  } catch {
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = () => {
+    console.log('Sentinel WS: connected to MCP bridge');
+    wsReconnectDelay = WS_RECONNECT_MIN;
+    // Start keepalive alarm to prevent service worker death
+    chrome.alarms.create(WS_KEEPALIVE_INTERVAL, { periodInMinutes: 0.4 }); // ~24s
+  };
+
+  ws.onmessage = (event) => {
+    let msg: { id: string; command: string; payload?: Record<string, unknown> };
+    try {
+      msg = JSON.parse(event.data as string);
+    } catch {
+      return;
+    }
+    handleApiCommand(msg.id, msg.command, msg.payload ?? {});
+  };
+
+  ws.onclose = () => {
+    ws = null;
+    chrome.alarms.clear(WS_KEEPALIVE_INTERVAL);
+    scheduleReconnect();
+  };
+
+  ws.onerror = () => {
+    ws?.close();
+  };
+}
+
+function scheduleReconnect() {
+  setTimeout(() => {
+    wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_RECONNECT_MAX);
+    wsConnect();
+  }, wsReconnectDelay);
+}
+
+function wsSend(id: string, success: boolean, data?: unknown, error?: string) {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ id, success, ...(success ? { data } : { error }) }));
+  }
+}
+
+// Keepalive alarm listener
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === WS_KEEPALIVE_INTERVAL) {
+    // Ping to keep service worker alive; reconnect if needed
+    if (!ws || ws.readyState !== WebSocket.OPEN) wsConnect();
+  }
+});
+
+// Connect on startup
+wsConnect();
+
+// Also reconnect when service worker wakes
+chrome.runtime.onStartup?.addListener(() => wsConnect());
+
+// ── API Command Dispatcher ──
+
+async function handleApiCommand(id: string, command: string, payload: Record<string, unknown>) {
+  try {
+    switch (command) {
+      case 'API_GET_STATUS': {
+        const result = await chrome.storage.local.get(['isRecording', 'isErrorTracking', 'currentSession', 'capturedErrors', 'projectName', 'projectPath', 'projectDevUrl']);
+        const session = (result.currentSession as Action[]) || [];
+        const errors = (result.capturedErrors as CapturedError[]) || [];
+        const issues = await getIssues();
+        const tabId = await getActiveTabId();
+        const tab = tabId ? await chrome.tabs.get(tabId) : null;
+        wsSend(id, true, {
+          isRecording: result.isRecording ?? false,
+          isErrorTracking: result.isErrorTracking ?? false,
+          actionCount: session.length,
+          errorCount: errors.length,
+          issueCount: issues.length,
+          currentUrl: tab?.url ?? null,
+          project: {
+            name: (result.projectName as string) || null,
+            path: (result.projectPath as string) || null,
+            devUrl: (result.projectDevUrl as string) || null,
+          },
+        });
+        break;
+      }
+
+      case 'API_NAVIGATE': {
+        const url = payload.url as string;
+        if (!url) { wsSend(id, false, undefined, 'Missing url'); break; }
+        const tabId = await getActiveTabId();
+        if (!tabId) { wsSend(id, false, undefined, 'No active tab'); break; }
+        await chrome.tabs.update(tabId, { url });
+        // Wait for page load
+        await new Promise<void>((resolve) => {
+          const listener = (tId: number, info: { status?: string }) => {
+            if (tId === tabId && info.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+          // Timeout after 30s
+          setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, 30000);
+        });
+        const tab = await chrome.tabs.get(tabId);
+        wsSend(id, true, { url: tab.url, title: tab.title });
+        break;
+      }
+
+      case 'API_SCREENSHOT': {
+        const dataUrl = await captureScreenshot();
+        if (dataUrl) {
+          wsSend(id, true, { screenshot: dataUrl });
+        } else {
+          wsSend(id, false, undefined, 'Screenshot capture failed');
+        }
+        break;
+      }
+
+      case 'API_GET_SESSION': {
+        const result = await chrome.storage.local.get('currentSession');
+        const session = (result.currentSession as Action[]) || [];
+        // Strip screenshot data to reduce payload size
+        const stripped = session.map(({ screenshot, ...rest }) => rest);
+        wsSend(id, true, { actions: stripped });
+        break;
+      }
+
+      case 'API_GET_ERRORS': {
+        const result = await chrome.storage.local.get('capturedErrors');
+        wsSend(id, true, { errors: (result.capturedErrors as CapturedError[]) || [] });
+        break;
+      }
+
+      case 'API_GET_ISSUES': {
+        const issues = await getIssues();
+        // Strip screenshots
+        const stripped = issues.map(({ screenshot, ...rest }) => rest);
+        wsSend(id, true, { issues: stripped });
+        break;
+      }
+
+      case 'API_START_RECORDING': {
+        chrome.storage.local.set({ isRecording: true, currentSession: [] });
+        const tabId = await getActiveTabId();
+        if (tabId) sendToTab(tabId, 'START_RECORDING');
+        wsSend(id, true, { success: true });
+        break;
+      }
+
+      case 'API_STOP_RECORDING': {
+        chrome.storage.local.set({ isRecording: false });
+        const tabId = await getActiveTabId();
+        if (tabId) sendToTab(tabId, 'STOP_RECORDING');
+        const result = await chrome.storage.local.get('currentSession');
+        const session = (result.currentSession as Action[]) || [];
+        wsSend(id, true, { success: true, actionCount: session.length });
+        break;
+      }
+
+      case 'API_START_ERROR_TRACKING': {
+        chrome.storage.local.set({ isErrorTracking: true, capturedErrors: [] });
+        const tabId = await getActiveTabId();
+        if (tabId) sendToTab(tabId, 'START_ERROR_TRACKING');
+        wsSend(id, true, { success: true });
+        break;
+      }
+
+      case 'API_STOP_ERROR_TRACKING': {
+        chrome.storage.local.set({ isErrorTracking: false });
+        const tabId = await getActiveTabId();
+        if (tabId) sendToTab(tabId, 'STOP_ERROR_TRACKING');
+        wsSend(id, true, { success: true });
+        break;
+      }
+
+      case 'API_SAVE_ISSUE': {
+        const tabId = await getActiveTabId();
+        const tab = tabId ? await chrome.tabs.get(tabId) : null;
+        const screenshot = await captureScreenshot();
+        const issue = await saveIssue({
+          type: (payload.type as Issue['type']) || 'bug',
+          title: (payload.title as string) || 'Untitled Issue',
+          notes: (payload.notes as string) || '',
+          severity: (payload.severity as Issue['severity']) || 'medium',
+          pageUrl: tab?.url || '',
+          screenshot: screenshot ?? undefined,
+        });
+        wsSend(id, true, { success: true, id: issue.id });
+        break;
+      }
+
+      case 'API_GENERATE_GUIDE': {
+        const result = await chrome.storage.local.get('currentSession');
+        const session = (result.currentSession as Action[]) || [];
+        const edits: GuideEdits | undefined = (payload.title || payload.intro || payload.conclusion) ? {
+          guideTitle: (payload.title as string) || '',
+          introText: (payload.intro as string) || '',
+          conclusionText: (payload.conclusion as string) || '',
+          steps: session.map((_, i) => ({
+            originalIndex: i,
+            title: '',
+            notes: '',
+            includeScreenshot: true,
+            included: true,
+          })),
+        } : undefined;
+        const html = generateGuideHTML(session, edits);
+        wsSend(id, true, { html });
+        break;
+      }
+
+      case 'API_GENERATE_REPORT': {
+        const issues = await getIssues();
+        const html = generateIssueReportHTML(issues);
+        wsSend(id, true, { html });
+        break;
+      }
+
+      case 'API_INJECT_ACTION':
+      case 'API_WAIT_FOR_ELEMENT':
+      case 'API_EVALUATE_SELECTOR': {
+        // Forward to content script and relay response
+        const tabId = await getActiveTabId();
+        if (!tabId) { wsSend(id, false, undefined, 'No active tab'); break; }
+        try {
+          const response = await chrome.tabs.sendMessage(tabId, { type: command, payload });
+          wsSend(id, true, response);
+        } catch (err) {
+          wsSend(id, false, undefined, `Content script error: ${err}`);
+        }
+        break;
+      }
+
+      default:
+        wsSend(id, false, undefined, `Unknown command: ${command}`);
+    }
+  } catch (err) {
+    wsSend(id, false, undefined, String(err));
+  }
+}
 
 // ── Side Panel ──
 
@@ -279,6 +538,33 @@ onMessage((message: Message, _sender, sendResponse) => {
         reader.readAsDataURL(blob);
       });
       break;
+    }
+
+    case 'LAUNCH_MCP_SERVER':
+    case 'STOP_MCP_SERVER':
+    case 'MCP_LAUNCHER_STATUS':
+    case 'REMOVE_MCP_LAUNCHER':
+    case 'INSTALL_LOCAL_MCP': {
+      const cmd = type === 'LAUNCH_MCP_SERVER'  ? 'start'
+                : type === 'STOP_MCP_SERVER'    ? 'stop'
+                : type === 'REMOVE_MCP_LAUNCHER'? 'uninstall'
+                : type === 'INSTALL_LOCAL_MCP'  ? 'install_local'
+                :                                 'status';
+      const nativePayload = type === 'INSTALL_LOCAL_MCP'
+        ? { command: cmd, payload: { project_path: (payload as Record<string, string>).projectPath } }
+        : { command: cmd };
+      chrome.runtime.sendNativeMessage('com.sentinel.launcher', nativePayload, (response) => {
+        if (chrome.runtime.lastError) {
+          const msg = chrome.runtime.lastError.message ?? 'Unknown error';
+          const notInstalled = msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('not installed');
+          sendResponse({ success: false, error: msg, notInstalled });
+        } else {
+          // After a successful start, attempt immediate WS reconnect
+          if (cmd === 'start' && response?.status === 'started') wsConnect();
+          sendResponse(response ?? { success: false, error: 'No response' });
+        }
+      });
+      return true; // keep channel open for async sendNativeMessage callback
     }
 
     case 'EXPORT_GUIDE': {

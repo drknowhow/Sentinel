@@ -66,7 +66,25 @@ export type MessageType =
   | 'EXPORT_ISSUES'
   | 'START_FEATURE_INSPECTION'
   | 'EXPORT_EDITED_GUIDE'
-  | 'GET_TAB_CAPTURE_STREAM_ID';
+  | 'GET_TAB_CAPTURE_STREAM_ID'
+  // ── MCP Launcher (native messaging) ──
+  | 'LAUNCH_MCP_SERVER'
+  | 'STOP_MCP_SERVER'
+  | 'MCP_LAUNCHER_STATUS'
+  | 'REMOVE_MCP_LAUNCHER'
+  | 'INSTALL_LOCAL_MCP'
+  // ── API (MCP WebSocket bridge) ──
+  | 'API_NAVIGATE'
+  | 'API_SCREENSHOT'
+  | 'API_GET_SESSION'
+  | 'API_GET_ERRORS'
+  | 'API_GET_ISSUES'
+  | 'API_INJECT_ACTION'
+  | 'API_GENERATE_GUIDE'
+  | 'API_GENERATE_REPORT'
+  | 'API_GET_STATUS'
+  | 'API_WAIT_FOR_ELEMENT'
+  | 'API_EVALUATE_SELECTOR';
 
 export interface Message<T = unknown> {
   type: MessageType;

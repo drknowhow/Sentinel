@@ -10,7 +10,9 @@
     "downloads",
     "tabs",
     "sidePanel",
-    "tabCapture"
+    "tabCapture",
+    "alarms",
+    "nativeMessaging"
   ],
   "action": {
     "default_icon": {

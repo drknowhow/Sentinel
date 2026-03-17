@@ -106,7 +106,7 @@ export default function Footer() {
             </div>
 
             {/* Action buttons */}
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
               <button
                 onClick={() => openUrl('https://drknowhow.github.io/Sentinel/')}
                 style={{
@@ -164,6 +164,34 @@ export default function Footer() {
                 GitHub
               </button>
             </div>
+            {/* Sponsor button */}
+            <button
+              onClick={() => openUrl('https://github.com/sponsors/drknowhow')}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: '#9d174d',
+                background: '#fff1f2',
+                border: '1px solid #fecdd3',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#ffe4e6')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#fff1f2')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <path d="M12 21.593c-.527-.437-1.524-1.26-2.653-2.288C6.725 16.918 3 13.392 3 9.5 3 6.463 5.462 4 8.5 4c1.922 0 3.625 1.004 4.5 2.528C13.875 5.004 15.578 4 17.5 4 20.538 4 23 6.463 23 9.5c0 3.893-3.725 7.418-6.347 9.805C15.524 20.333 14.527 21.156 14 21.59l-1 .833-1-.83z"/>
+              </svg>
+              Sponsor this project
+            </button>
           </div>
         </div>
       )}

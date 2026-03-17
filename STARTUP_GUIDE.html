@@ -756,25 +756,41 @@
     <!-- Ch 10 -->
     <div class="chapter-group" data-chapter="10">
       <button class="chapter-toggle" onclick="toggleChapter(this)">
-        <span class="ch-num">10</span> Architecture
+        <span class="ch-num">10</span> AI Automation (MCP)
         <span class="ch-arrow">&#9654;</span>
       </button>
       <div class="chapter-sections">
-        <a href="#10-1">10.1 Project Structure</a>
-        <a href="#10-2">10.2 Tech Stack</a>
-        <a href="#10-3">10.3 Chrome APIs</a>
+        <a href="#10-1">10.1 Overview</a>
+        <a href="#10-2">10.2 Setup &amp; Installation</a>
+        <a href="#10-3">10.3 MCP Tools Reference</a>
+        <a href="#10-4">10.4 Settings Tab</a>
+        <a href="#10-5">10.5 Troubleshooting MCP</a>
+        <a href="#10-6">10.6 AI Workflow Examples</a>
       </div>
     </div>
 
     <!-- Ch 11 -->
     <div class="chapter-group" data-chapter="11">
       <button class="chapter-toggle" onclick="toggleChapter(this)">
-        <span class="ch-num">11</span> Troubleshooting
+        <span class="ch-num">11</span> Architecture
         <span class="ch-arrow">&#9654;</span>
       </button>
       <div class="chapter-sections">
-        <a href="#11-1">11.1 Common Issues</a>
-        <a href="#11-2">11.2 Development Workflow</a>
+        <a href="#11-1">11.1 Project Structure</a>
+        <a href="#11-2">11.2 Tech Stack</a>
+        <a href="#11-3">11.3 Chrome APIs</a>
+      </div>
+    </div>
+
+    <!-- Ch 12 -->
+    <div class="chapter-group" data-chapter="12">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">12</span> Troubleshooting
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#12-1">12.1 Common Issues</a>
+        <a href="#12-2">12.2 Development Workflow</a>
       </div>
     </div>
 
@@ -1172,11 +1188,225 @@ npm run build</code></pre>
   <div class="chapter-block" data-chapter="10">
     <div class="chapter-header" id="ch-10">
       <span class="ch-badge">10</span>
-      <h2>Architecture</h2>
+      <h2>AI Automation (MCP)</h2>
     </div>
 
     <div class="section" id="10-1" data-searchable>
-      <h3>10.1 Project Structure</h3>
+      <h3>10.1 Overview</h3>
+      <p>Sentinel includes a <strong>Model Context Protocol (MCP) server</strong> that lets AI assistants (Claude Code, Cursor, Copilot, etc.) control the extension programmatically. The AI can record guides, capture errors, take screenshots, navigate pages, and read your source code&mdash;all in a single conversation.</p>
+      <div class="callout">
+        <strong>Why MCP?</strong>
+        MCP is an open standard that connects AI models to external tools. Sentinel&rsquo;s MCP server turns the extension into an AI-controllable browser automation toolkit with full project context.
+      </div>
+      <p style="margin-top:12px">Once configured, you can give the AI high-level instructions like:</p>
+      <ul style="margin:8px 0 0 20px;line-height:2">
+        <li><em>&ldquo;Perform the task addition flow and write a guide.&rdquo;</em></li>
+        <li><em>&ldquo;Evaluate task addition for JS errors.&rdquo;</em></li>
+        <li><em>&ldquo;Record me logging in and export a step-by-step guide.&rdquo;</em></li>
+      </ul>
+      <p style="margin-top:8px">The AI will call <code>sentinel_status()</code> to load your project context, read source files, navigate to your dev server, and use Sentinel tools to produce the output.</p>
+    </div>
+
+    <div class="section" id="10-2" data-searchable>
+      <h3>10.2 Setup &amp; Installation</h3>
+
+      <p>There are two ways to run the MCP server. <strong>Option A</strong> (recommended) lets you start and stop it with a button inside the extension. <strong>Option B</strong> is the manual terminal fallback.</p>
+
+      <h4 style="margin:16px 0 8px;font-size:0.95em;">Option A &mdash; Start/Stop from the Settings tab (recommended)</h4>
+      <ol class="steps">
+        <li>Install Python dependencies (once):
+          <pre><code>pip install -r mcp-server/requirements.txt</code></pre>
+        </li>
+        <li>Register the native launcher (once). Open the Sentinel <strong>Settings</strong> tab &rarr; <strong>MCP Bridge</strong>. If the launcher is not yet installed you will see an amber banner with your exact command&mdash;copy and run it:
+          <pre><code>python mcp-server/install_host.py &lt;your-extension-id&gt;</code></pre>
+          The extension ID is shown in the banner and has a <strong>Copy</strong> button. After running the command, reload the extension in <code>chrome://extensions/</code>.
+        </li>
+        <li>From now on, use the <strong>Start</strong> and <strong>Stop</strong> buttons in the Settings tab to control the server&mdash;no terminal needed.</li>
+        <li>Configure your AI client. In the <strong>Supported AI Tools</strong> section, click <strong>Install</strong> next to your tool to copy the correct config snippet, then paste it into the tool&rsquo;s config file.</li>
+      </ol>
+
+      <h4 style="margin:16px 0 8px;font-size:0.95em;">Option B &mdash; Manual terminal</h4>
+      <ol class="steps">
+        <li>Install dependencies (once):
+          <pre><code>pip install -r mcp-server/requirements.txt</code></pre>
+        </li>
+        <li>Start the server:
+          <pre><code>python mcp-server/sentinel_mcp.py</code></pre>
+        </li>
+        <li>Keep the terminal open while using AI tools. Open the Sentinel side panel in Chrome and check for the green <strong>Connected</strong> badge.</li>
+      </ol>
+
+      <div class="callout">
+        <strong>Windows only</strong>
+        The launcher (Option A) currently supports Windows. On macOS/Linux, use Option B or register the native host manually by adapting <code>install_host.py</code> for your platform.
+      </div>
+    </div>
+
+    <div class="section" id="10-3" data-searchable>
+      <h3>10.3 MCP Tools Reference</h3>
+      <table>
+        <thead>
+          <tr><th>Tool</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>sentinel_navigate</code></td><td>Navigate the active tab to a URL.</td></tr>
+          <tr><td><code>sentinel_screenshot</code></td><td>Capture a screenshot of the current tab.</td></tr>
+          <tr><td><code>sentinel_status</code></td><td>Get extension state (recording, error tracking, counts).</td></tr>
+          <tr><td><code>sentinel_start_recording</code></td><td>Start recording user interactions.</td></tr>
+          <tr><td><code>sentinel_stop_recording</code></td><td>Stop recording and return captured action count.</td></tr>
+          <tr><td><code>sentinel_inject_action</code></td><td>Execute a synthetic DOM action (click, input, scroll, etc.).</td></tr>
+          <tr><td><code>sentinel_get_session</code></td><td>Get all recorded actions from the current session.</td></tr>
+          <tr><td><code>sentinel_export_guide</code></td><td>Generate an HTML guide from the recorded session.</td></tr>
+          <tr><td><code>sentinel_start_error_tracking</code></td><td>Start capturing JS errors, network failures, and CSP violations.</td></tr>
+          <tr><td><code>sentinel_stop_error_tracking</code></td><td>Stop error tracking.</td></tr>
+          <tr><td><code>sentinel_get_errors</code></td><td>Get all captured errors.</td></tr>
+          <tr><td><code>sentinel_save_issue</code></td><td>Save an issue with a screenshot (bug or feature request).</td></tr>
+          <tr><td><code>sentinel_get_issues</code></td><td>Get all saved issues.</td></tr>
+          <tr><td><code>sentinel_export_issues</code></td><td>Generate an HTML issue report.</td></tr>
+          <tr><td><code>sentinel_wait_for_element</code></td><td>Wait for a CSS selector to appear in the DOM.</td></tr>
+          <tr><td><code>sentinel_evaluate_selector</code></td><td>Check if a selector exists and get element info.</td></tr>
+          <tr><td><code>sentinel_create_guide</code></td><td>One-shot: navigate, perform actions, and export a guide.</td></tr>
+          <tr><td><code>sentinel_investigate</code></td><td>One-shot: navigate, track errors, and return findings.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section" id="10-4" data-searchable>
+      <h3>10.4 Settings Tab</h3>
+      <p>The <strong>Settings</strong> tab (gear icon) is the main control center for MCP. It has three relevant sections:</p>
+
+      <h4 style="margin:16px 0 8px;font-size:0.95em;">MCP Bridge</h4>
+      <p>Shows the server name, live WebSocket status badge, and process controls.</p>
+      <div class="feature-grid">
+        <div class="card">
+          <h4 style="color:var(--success)">Start button</h4>
+          <p>Visible when the server is stopped and the launcher is installed. Spawns <code>sentinel_mcp.py</code> as a background process.</p>
+        </div>
+        <div class="card">
+          <h4 style="color:var(--danger)">Stop button</h4>
+          <p>Visible when the server is running. Terminates the process cleanly via PID file.</p>
+        </div>
+        <div class="card">
+          <h4 style="color:var(--warning)">Not installed banner</h4>
+          <p>Shown when the native launcher hasn&rsquo;t been registered. Displays the exact install command with your extension ID and a Copy button.</p>
+        </div>
+        <div class="card">
+          <h4>Status badges</h4>
+          <p><span style="color:var(--success)">Connected</span> &mdash; WebSocket linked, AI tools ready.<br>
+          <span style="color:var(--text-muted)">Disconnected</span> &mdash; server not running or not reachable.<br>
+          <span style="color:var(--danger)">Error</span> &mdash; connection attempt failed.</p>
+        </div>
+      </div>
+
+      <h4 style="margin:20px 0 8px;font-size:0.95em;">Project</h4>
+      <p>The Project section gives the AI persistent context about your codebase. Set three fields:</p>
+      <table>
+        <thead><tr><th>Field</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Project Name</strong></td><td>Human label shown in status responses.</td></tr>
+          <tr><td><strong>Source Folder</strong></td><td>Filesystem path to your project root (e.g. <code>C:/projects/my-app</code>). The AI uses this with its own file-reading tools to understand the codebase before acting.</td></tr>
+          <tr><td><strong>Dev Server URL</strong></td><td>The URL of your running dev server (e.g. <code>http://localhost:3000</code>). The AI navigates here automatically at the start of any task.</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:10px">All three fields are returned in <code>sentinel_status()</code> under <code>project.name</code>, <code>project.path</code>, and <code>project.devUrl</code>.</p>
+      <p style="margin-top:8px"><strong>Install MCP locally</strong> — once you have set a Source Folder, this button writes a <code>.mcp.json</code> to that folder pointing to the Sentinel MCP server. This lets any AI tool that starts from that project directory pick up the server automatically, without global configuration.</p>
+
+      <h4 style="margin:20px 0 8px;font-size:0.95em;">Supported AI Tools</h4>
+      <p>Lists all compatible AI clients (Claude Code, Claude Desktop, Cursor, VS Code Copilot, Codex). Click <strong>Install</strong> next to a tool to copy its config snippet to the clipboard, then paste it into the tool&rsquo;s config file. A green check marks tools you have already set up. The <strong>Remove</strong> icon clears the installed state.</p>
+
+      <table>
+        <thead><tr><th>Tool</th><th>Config file</th></tr></thead>
+        <tbody>
+          <tr><td>Claude Code</td><td><code>.mcp.json</code></td></tr>
+          <tr><td>Claude Desktop</td><td><code>claude_desktop_config.json</code></td></tr>
+          <tr><td>Cursor</td><td><code>.cursor/mcp.json</code></td></tr>
+          <tr><td>VS Code Copilot</td><td><code>.vscode/settings.json</code></td></tr>
+          <tr><td>Codex</td><td><code>.codex/config.toml</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section" id="10-5" data-searchable>
+      <h3>10.5 Troubleshooting MCP</h3>
+      <div class="card">
+        <h4>Settings shows amber &ldquo;Not installed&rdquo; banner</h4>
+        <p>The native launcher has not been registered with Chrome. Copy the command shown in the banner and run it in a terminal, then reload the extension from <code>chrome://extensions/</code>. This is a one-time step.</p>
+      </div>
+      <div class="card">
+        <h4>Start button does nothing / spinner hangs</h4>
+        <p>The launcher is registered but Python failed to start the server. Check that <code>python</code> is on your PATH and that dependencies are installed (<code>pip install -r mcp-server/requirements.txt</code>). Also verify the registry path with <code>regedit</code> under <code>HKCU\Software\Google\Chrome\NativeMessagingHosts\com.sentinel.launcher</code>.</p>
+      </div>
+      <div class="card">
+        <h4>Extension shows &ldquo;Disconnected&rdquo; after clicking Start</h4>
+        <p>The server process starts but the WebSocket connection takes a few seconds. Wait up to 15 seconds and the status badge will update automatically. If it stays disconnected, click the refresh icon.</p>
+      </div>
+      <div class="card">
+        <h4>Tools return &ldquo;Extension not connected&rdquo;</h4>
+        <p>The AI client launched the MCP server but the browser extension hasn&rsquo;t linked yet. Open the Sentinel side panel in Chrome, wait for the Connected badge, then retry.</p>
+      </div>
+      <div class="card">
+        <h4>WebSocket error in Chrome extension console</h4>
+        <p><code>ERR_CONNECTION_REFUSED</code> on port 18925 is expected when the MCP server is not running. It does not affect recording, playback, or any other feature. Start the server to clear the error.</p>
+      </div>
+      <div class="card">
+        <h4>Port 18925 already in use</h4>
+        <p>A previous MCP server instance is still running. Click <strong>Stop</strong> in Settings, or find and kill the process with <code>netstat -ano | findstr 18925</code> followed by <code>taskkill /F /PID &lt;pid&gt;</code>.</p>
+      </div>
+    </div>
+    <div class="section" id="10-6" data-searchable>
+      <h3>10.6 AI Workflow Examples</h3>
+      <p>Once your project is configured in Settings, the AI loads context automatically via <code>sentinel_status()</code> and can act on high-level instructions. Here are common patterns:</p>
+
+      <div class="card">
+        <h4>Write a feature guide</h4>
+        <p><em>&ldquo;Perform the task addition flow and write a guide.&rdquo;</em></p>
+        <ol class="steps" style="margin-top:8px">
+          <li>AI calls <code>sentinel_status()</code> &rarr; gets <code>project.path</code> and <code>project.devUrl</code>.</li>
+          <li>AI reads relevant source files to understand the feature.</li>
+          <li>AI navigates to the dev URL and starts recording.</li>
+          <li>AI performs the interaction steps via <code>sentinel_inject_action()</code>.</li>
+          <li>AI stops recording and calls <code>sentinel_export_guide()</code> with a generated title and intro.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h4>Evaluate a feature for errors</h4>
+        <p><em>&ldquo;Evaluate task addition for JS errors.&rdquo;</em></p>
+        <ol class="steps" style="margin-top:8px">
+          <li>AI calls <code>sentinel_status()</code> &rarr; gets project context.</li>
+          <li>AI reads the relevant source files for the feature.</li>
+          <li>AI calls <code>sentinel_start_error_tracking()</code>, then navigates and performs the flow.</li>
+          <li>AI calls <code>sentinel_get_errors()</code> and cross-references errors with the source code.</li>
+          <li>AI reports findings with file/line references and suggested fixes.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h4>Log a bug with screenshot</h4>
+        <p><em>&ldquo;The submit button on the contact form is misaligned &mdash; log it.&rdquo;</em></p>
+        <ol class="steps" style="margin-top:8px">
+          <li>AI navigates to the relevant page.</li>
+          <li>AI calls <code>sentinel_save_issue()</code> with type <code>bug</code>, a title, and notes &mdash; a screenshot is captured automatically.</li>
+          <li>AI calls <code>sentinel_export_issues()</code> to generate a full issue report.</li>
+        </ol>
+      </div>
+
+      <div class="callout">
+        <strong>Tip: be specific about the feature, not the steps.</strong>
+        You don&rsquo;t need to tell the AI which buttons to click. Describe the feature or flow by name (as it appears in your source code or UI) and the AI will figure out the steps from the codebase and live browser state.
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 11 ======================== -->
+  <div class="chapter-block" data-chapter="11">
+    <div class="chapter-header" id="ch-11">
+      <span class="ch-badge">11</span>
+      <h2>Architecture</h2>
+    </div>
+
+    <div class="section" id="11-1" data-searchable>
+      <h3>11.1 Project Structure</h3>
       <pre><code>extension/
   src/
     types.ts                &mdash; Shared TypeScript interfaces
@@ -1209,8 +1439,8 @@ npm run build</code></pre>
   dist/                     &mdash; Production build output</code></pre>
     </div>
 
-    <div class="section" id="10-2" data-searchable>
-      <h3>10.2 Tech Stack</h3>
+    <div class="section" id="11-2" data-searchable>
+      <h3>11.2 Tech Stack</h3>
       <div class="feature-grid">
         <div class="card">
           <h4>React 19</h4>
@@ -1231,8 +1461,8 @@ npm run build</code></pre>
       </div>
     </div>
 
-    <div class="section" id="10-3" data-searchable>
-      <h3>10.3 Chrome APIs</h3>
+    <div class="section" id="11-3" data-searchable>
+      <h3>11.3 Chrome APIs</h3>
       <table>
         <thead>
           <tr><th>Permission</th><th>Purpose</th></tr>
@@ -1250,15 +1480,15 @@ npm run build</code></pre>
     </div>
   </div>
 
-  <!-- ======================== CHAPTER 11 ======================== -->
-  <div class="chapter-block" data-chapter="11">
-    <div class="chapter-header" id="ch-11">
-      <span class="ch-badge">11</span>
+  <!-- ======================== CHAPTER 12 ======================== -->
+  <div class="chapter-block" data-chapter="12">
+    <div class="chapter-header" id="ch-12">
+      <span class="ch-badge">12</span>
       <h2>Troubleshooting</h2>
     </div>
 
-    <div class="section" id="11-1" data-searchable>
-      <h3>11.1 Common Issues</h3>
+    <div class="section" id="12-1" data-searchable>
+      <h3>12.1 Common Issues</h3>
 
       <div class="card">
         <h4>Side panel doesn't open</h4>
@@ -1286,8 +1516,8 @@ npm run build</code></pre>
       </div>
     </div>
 
-    <div class="section" id="11-2" data-searchable>
-      <h3>11.2 Development Workflow</h3>
+    <div class="section" id="12-2" data-searchable>
+      <h3>12.2 Development Workflow</h3>
       <ol class="steps">
         <li>Edit source files in <code>extension/src/</code>.</li>
         <li>Run <code>npm run build</code> (or use <code>npm run dev</code> for watch mode).</li>
