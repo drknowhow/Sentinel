@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Sentinel",
+  "version": "1.0.0",
+  "description": "Web Application Tester & Guide Creator",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "downloads",
+    "tabs",
+    "sidePanel",
+    "tabCapture"
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

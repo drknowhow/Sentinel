@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel User Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --primary: #0e7490;
+      --primary-light: #e0f2fe;
+      --primary-hover: #0c6577;
+      --accent: #0284c7;
+      --border: #e2e8f0;
+      --code-bg: #f1f5f9;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
+      --nav-w: 280px;
+      --highlight: #fef08a;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --text: #e2e8f0;
+        --text-muted: #94a3b8;
+        --primary: #22d3ee;
+        --primary-light: #164e63;
+        --primary-hover: #06b6d4;
+        --accent: #38bdf8;
+        --border: #334155;
+        --code-bg: #0f172a;
+        --success: #4ade80;
+        --warning: #fbbf24;
+        --danger: #f87171;
+        --highlight: #854d0e;
+      }
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    /* ============ SIDEBAR NAV ============ */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: var(--nav-w);
+      height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .nav-header {
+      padding: 20px 16px 0;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    .brand .logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      object-fit: contain;
+    }
+
+    .brand span {
+      font-weight: 700;
+      font-size: 17px;
+      color: var(--text);
+    }
+
+    /* ---- SEARCH ---- */
+    .search-wrap {
+      position: relative;
+      margin-bottom: 12px;
+    }
+
+    .search-wrap svg {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 15px;
+      height: 15px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    #search {
+      width: 100%;
+      padding: 8px 32px 8px 32px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #search:focus { border-color: var(--primary); }
+
+    #search-clear {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      display: none;
+      padding: 0;
+    }
+
+    #search-clear:hover { color: var(--text); }
+    #search.has-value ~ #search-clear { display: block; }
+
+    .search-info {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 4px 0 8px;
+      display: none;
+    }
+
+    .search-info.visible { display: block; }
+
+    /* ---- NAV TOC ---- */
+    .nav-toc {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 0 20px;
+    }
+
+    .nav-toc::-webkit-scrollbar { width: 4px; }
+    .nav-toc::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .chapter-group { margin-bottom: 2px; }
+
+    .chapter-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.1s;
+    }
+
+    .chapter-toggle:hover { background: var(--primary-light); }
+
+    .chapter-toggle .ch-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .chapter-toggle .ch-arrow {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--text-muted);
+      transition: transform 0.2s;
+    }
+
+    .chapter-group.open .ch-arrow { transform: rotate(90deg); }
+
+    .chapter-sections {
+      display: none;
+      padding: 0 0 6px;
+    }
+
+    .chapter-group.open .chapter-sections { display: block; }
+
+    .chapter-sections a {
+      display: block;
+      padding: 4px 16px 4px 46px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      transition: color 0.1s, background 0.1s;
+      border-left: 3px solid transparent;
+    }
+
+    .chapter-sections a:hover,
+    .chapter-sections a.active {
+      color: var(--primary);
+      background: var(--primary-light);
+      border-left-color: var(--primary);
+    }
+
+    .nav-toc .no-results {
+      padding: 20px 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      display: none;
+    }
+
+    /* ============ MOBILE NAV TOGGLE ============ */
+    .nav-toggle {
+      display: none;
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 200;
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 20px;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow);
+    }
+
+    .nav-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 90;
+    }
+
+    /* ============ MAIN ============ */
+    main {
+      margin-left: var(--nav-w);
+      max-width: 840px;
+      padding: 48px 48px 96px;
+    }
+
+    /* ---- HERO ---- */
+    .hero {
+      text-align: center;
+      padding: 40px 0 36px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 48px;
+    }
+
+    .hero-icon {
+      width: 88px;
+      height: 88px;
+      object-fit: contain;
+      margin-bottom: 12px;
+    }
+
+    .hero h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      margin-bottom: 10px;
+    }
+
+    .hero .subtitle {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 540px;
+      margin: 0 auto 16px;
+    }
+
+    .badge-row {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+
+    /* ---- CHAPTER HEADERS ---- */
+    .chapter-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 28px;
+      padding-bottom: 14px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .chapter-header .ch-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .chapter-header h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      border: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    /* ---- SECTIONS ---- */
+    .section { margin-bottom: 48px; }
+
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 28px 0 12px;
+      color: var(--primary);
+    }
+
+    h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 20px 0 8px;
+    }
+
+    p { margin-bottom: 14px; }
+    ul, ol { margin-bottom: 14px; padding-left: 24px; }
+    li { margin-bottom: 6px; }
+
+    /* ---- CARDS ---- */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h4 { margin: 0 0 6px; }
+    .card p { margin-bottom: 0; }
+
+    /* ---- FEATURE GRID ---- */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .feature-grid .card { margin-bottom: 0; }
+
+    /* ---- STEPS ---- */
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      padding: 0;
+    }
+
+    .steps li {
+      counter-increment: step;
+      position: relative;
+      padding: 2px 0 18px 50px;
+      margin-bottom: 2px;
+    }
+
+    .steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 32px;
+      height: 32px;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .steps li::after {
+      content: '';
+      position: absolute;
+      left: 15px;
+      top: 36px;
+      bottom: 0;
+      width: 2px;
+      background: var(--border);
+    }
+
+    .steps li:last-child::after { display: none; }
+
+    /* ---- CODE ---- */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.88em;
+    }
+
+    p code, li code, td code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    /* ---- TABLES ---- */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      font-weight: 600;
+      background: var(--code-bg);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    /* ---- CALLOUTS ---- */
+    .callout {
+      border-left: 4px solid var(--primary);
+      background: var(--primary-light);
+      padding: 14px 18px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .callout.tip { border-left-color: var(--success); }
+    .callout.warning { border-left-color: var(--warning); background: #fef3c7; }
+    .callout.danger { border-left-color: var(--danger); background: #fef2f2; }
+
+    @media (prefers-color-scheme: dark) {
+      .callout.warning { background: #422006; }
+      .callout.danger { background: #450a0a; }
+    }
+
+    .callout strong { display: block; margin-bottom: 4px; }
+
+    /* ---- KBD ---- */
+    kbd {
+      display: inline-block;
+      padding: 2px 7px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--code-bg);
+      box-shadow: 0 1px 0 var(--border);
+    }
+
+    /* ---- SEARCH HIGHLIGHT ---- */
+    mark.search-hl {
+      background: var(--highlight);
+      color: inherit;
+      padding: 1px 2px;
+      border-radius: 2px;
+    }
+
+    .section.search-hidden { display: none; }
+    .chapter-group.search-hidden { display: none; }
+
+    /* ---- BACK TO TOP ---- */
+    #back-to-top {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 18px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-md);
+      transition: opacity 0.2s;
+      z-index: 50;
+    }
+
+    #back-to-top.visible { display: flex; }
+    #back-to-top:hover { color: var(--primary); border-color: var(--primary); }
+
+    /* ---- CHAPTER SEPARATOR ---- */
+    .chapter-block {
+      margin-bottom: 64px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .chapter-block:last-of-type { border-bottom: none; }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 960px) {
+      nav {
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        box-shadow: none;
+      }
+      nav.open {
+        transform: translateX(0);
+        box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+      }
+      .nav-toggle { display: flex; }
+      .nav-overlay.open { display: block; }
+      main { margin-left: 0; padding: 60px 24px 80px; }
+    }
+
+    @media (max-width: 600px) {
+      .feature-grid { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 1.7rem; }
+      main { padding: 56px 16px 64px; }
+    }
+
+    /* ---- SCROLL ---- */
+    [id] { scroll-margin-top: 24px; }
+
+    /* ---- PRINT ---- */
+    @media print {
+      nav, .nav-toggle, #back-to-top { display: none !important; }
+      main { margin-left: 0; max-width: 100%; padding: 20px; }
+      .hero { padding: 16px 0; }
+      .chapter-block { page-break-before: always; border: none; }
+      .chapter-block:first-of-type { page-break-before: auto; }
+      pre { white-space: pre-wrap; word-wrap: break-word; }
+    }
+
+    /* ---- FOOTER ---- */
+    .guide-footer {
+      text-align: center;
+      padding-top: 32px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ============ MOBILE NAV TOGGLE ============ -->
+<button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+<div class="nav-overlay" id="nav-overlay"></div>
+
+<!-- ============ SIDEBAR NAV ============ -->
+<nav id="sidebar">
+  <div class="nav-header">
+    <div class="brand">
+      <img class="logo" src="icon.png" alt="Sentinel">
+      <span>Sentinel</span>
+    </div>
+
+    <div class="search-wrap">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
+      <input type="text" id="search" placeholder="Search guide..." autocomplete="off" spellcheck="false">
+      <button id="search-clear" aria-label="Clear search">&times;</button>
+    </div>
+    <div class="search-info" id="search-info"></div>
+  </div>
+
+  <div class="nav-toc" id="nav-toc">
+
+    <!-- Ch 1 -->
+    <div class="chapter-group open" data-chapter="1">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">1</span> Getting Started
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#1-1">1.1 Prerequisites</a>
+        <a href="#1-2">1.2 Build from Source</a>
+        <a href="#1-3">1.3 Load in Browser</a>
+        <a href="#1-4">1.4 Open the Side Panel</a>
+      </div>
+    </div>
+
+    <!-- Ch 2 -->
+    <div class="chapter-group" data-chapter="2">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">2</span> Recording
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#2-1">2.1 Start a Recording</a>
+        <a href="#2-2">2.2 What Gets Captured</a>
+        <a href="#2-3">2.3 Noise Reduction</a>
+      </div>
+    </div>
+
+    <!-- Ch 3 -->
+    <div class="chapter-group" data-chapter="3">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">3</span> Session Management
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#3-1">3.1 Save &amp; Load</a>
+        <a href="#3-2">3.2 Rename &amp; Delete</a>
+        <a href="#3-3">3.3 Storage</a>
+      </div>
+    </div>
+
+    <!-- Ch 4 -->
+    <div class="chapter-group" data-chapter="4">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">4</span> Visual Guides
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#4-1">4.1 Export an HTML Guide</a>
+        <a href="#4-2">4.2 Guide Editor</a>
+        <a href="#4-3">4.3 Sharing Guides</a>
+      </div>
+    </div>
+
+    <!-- Ch 5 -->
+    <div class="chapter-group" data-chapter="5">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">5</span> Playback
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#5-1">5.1 Start Playback</a>
+        <a href="#5-2">5.2 Playback Controls</a>
+        <a href="#5-3">5.3 Step-by-Step Mode</a>
+      </div>
+    </div>
+
+    <!-- Ch 6 -->
+    <div class="chapter-group" data-chapter="6">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">6</span> Assertions &amp; Testing
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#6-1">6.1 Adding Assertions</a>
+        <a href="#6-2">6.2 Assertion Types</a>
+        <a href="#6-3">6.3 Test Reports</a>
+      </div>
+    </div>
+
+    <!-- Ch 7 -->
+    <div class="chapter-group" data-chapter="7">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">7</span> Error Tracking
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#7-1">7.1 Captured Errors</a>
+        <a href="#7-2">7.2 Issue Reports</a>
+      </div>
+    </div>
+
+    <!-- Ch 8 -->
+    <div class="chapter-group" data-chapter="8">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">8</span> Video Recording
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#8-1">8.1 Capture a Video</a>
+        <a href="#8-2">8.2 Managing Clips</a>
+        <a href="#8-3">8.3 Limitations</a>
+      </div>
+    </div>
+
+    <!-- Ch 9 -->
+    <div class="chapter-group" data-chapter="9">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">9</span> UI Reference
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#9-1">9.1 Side Panel Layout</a>
+        <a href="#9-2">9.2 Captured Keyboard Events</a>
+      </div>
+    </div>
+
+    <!-- Ch 10 -->
+    <div class="chapter-group" data-chapter="10">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">10</span> Architecture
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#10-1">10.1 Project Structure</a>
+        <a href="#10-2">10.2 Tech Stack</a>
+        <a href="#10-3">10.3 Chrome APIs</a>
+      </div>
+    </div>
+
+    <!-- Ch 11 -->
+    <div class="chapter-group" data-chapter="11">
+      <button class="chapter-toggle" onclick="toggleChapter(this)">
+        <span class="ch-num">11</span> Troubleshooting
+        <span class="ch-arrow">&#9654;</span>
+      </button>
+      <div class="chapter-sections">
+        <a href="#11-1">11.1 Common Issues</a>
+        <a href="#11-2">11.2 Development Workflow</a>
+      </div>
+    </div>
+
+    <div class="no-results" id="no-results">No matching sections found.</div>
+  </div>
+</nav>
+
+<!-- ============ MAIN CONTENT ============ -->
+<main id="main-content">
+
+  <!-- HERO -->
+  <div class="hero" id="top">
+    <img src="icon.png" alt="Sentinel" class="hero-icon">
+    <h1>Sentinel User Guide</h1>
+    <p class="subtitle">A Chrome extension for recording web interactions, capturing bugs, and generating step-by-step visual guides — no code required.</p>
+    <div class="badge-row">
+      <span class="badge">Chrome MV3</span>
+      <span class="badge">Side Panel</span>
+      <span class="badge">React 19</span>
+      <span class="badge">TypeScript 5.9</span>
+      <span class="badge">Tailwind v4</span>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 1 ======================== -->
+  <div class="chapter-block" data-chapter="1">
+    <div class="chapter-header" id="ch-1">
+      <span class="ch-badge">1</span>
+      <h2>Getting Started</h2>
+    </div>
+
+    <div class="section" id="1-1" data-searchable>
+      <h3>1.1 Prerequisites</h3>
+      <ul>
+        <li><strong>Node.js 18+</strong> and <strong>npm</strong> installed on your system.</li>
+        <li>A Chromium-based browser: <strong>Google Chrome 114+</strong>, Microsoft Edge, or Brave.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="1-2" data-searchable>
+      <h3>1.2 Build from Source</h3>
+      <p>Open a terminal in the project root and run:</p>
+      <pre><code>cd extension
+npm install
+npm run build</code></pre>
+      <p>This creates the <code>extension/dist/</code> folder containing the production-ready extension files.</p>
+      <div class="callout tip">
+        <strong>Development mode</strong>
+        Use <code>npm run dev</code> for live rebuilds during development. After each rebuild, reload the extension in your browser to pick up changes.
+      </div>
+    </div>
+
+    <div class="section" id="1-3" data-searchable>
+      <h3>1.3 Load in Your Browser</h3>
+      <ol class="steps">
+        <li>Open your browser and navigate to <code>chrome://extensions/</code>.</li>
+        <li>Enable <strong>Developer mode</strong> using the toggle in the top-right corner.</li>
+        <li>Click <strong>Load unpacked</strong>.</li>
+        <li>Select the <code>extension/dist</code> folder from this project.</li>
+        <li>Sentinel appears in your toolbar. <strong>Pin it</strong> for easy access.</li>
+      </ol>
+    </div>
+
+    <div class="section" id="1-4" data-searchable>
+      <h3>1.4 Open the Side Panel</h3>
+      <p>Click the Sentinel icon in your browser toolbar. The <strong>side panel</strong> opens alongside your current page and <strong>stays open</strong> while you interact with websites — unlike popups, it won't close when you click away.</p>
+      <div class="callout">
+        <strong>Why a side panel?</strong>
+        Side panels persist during page navigation and interaction, making them ideal for recording sessions that span multiple pages or long workflows.
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 2 ======================== -->
+  <div class="chapter-block" data-chapter="2">
+    <div class="chapter-header" id="ch-2">
+      <span class="ch-badge">2</span>
+      <h2>Recording</h2>
+    </div>
+
+    <div class="section" id="2-1" data-searchable>
+      <h3>2.1 Start a Recording</h3>
+      <ol class="steps">
+        <li>Open the Sentinel side panel by clicking its toolbar icon.</li>
+        <li>Click <strong>Start Recording</strong> in the header controls.</li>
+        <li>Interact with any website — clicks, typing, form submissions, keyboard shortcuts, and scrolling are all captured automatically.</li>
+        <li>Watch recorded steps appear <strong>live</strong> in the Steps tab as you work.</li>
+        <li>Click <strong>Stop Recording</strong> when finished.</li>
+      </ol>
+    </div>
+
+    <div class="section" id="2-2" data-searchable>
+      <h3>2.2 What Gets Captured</h3>
+      <table>
+        <thead>
+          <tr><th>Event</th><th>Details</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Clicks</strong></td><td>Buttons, links, inputs, and interactive elements. Layout-only containers (div, section) are filtered out unless they have roles or event handlers.</td></tr>
+          <tr><td><strong>Text Input</strong></td><td>Debounced at 800ms per element. Only the final value is captured on blur or timeout.</td></tr>
+          <tr><td><strong>Keyboard</strong></td><td>Special keys (Enter, Escape, Tab, arrows, F-keys) and modifier combos (Ctrl+S, etc.).</td></tr>
+          <tr><td><strong>Scrolling</strong></td><td>Debounced at 1 second with a 200px minimum distance threshold.</td></tr>
+          <tr><td><strong>Form Submit</strong></td><td>Captured on the submit event.</td></tr>
+          <tr><td><strong>Navigation</strong></td><td>Page URL changes are tracked automatically.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section" id="2-3" data-searchable>
+      <h3>2.3 Noise Reduction</h3>
+      <p>Sentinel applies intelligent filtering to keep recordings clean and readable:</p>
+      <ul>
+        <li><strong>Input debouncing</strong> — 800ms per element; only emits the final value on blur or timeout.</li>
+        <li><strong>Keyboard filtering</strong> — only special keys and modifier combos are recorded; regular typing is captured as input events.</li>
+        <li><strong>Click deduplication</strong> — clicks within 300ms of each other on the same element are merged.</li>
+        <li><strong>Layout container rejection</strong> — clicks on <code>div</code>, <code>section</code>, <code>main</code>, etc. are suppressed unless the element has a <code>role</code>, <code>onclick</code>, or <code>tabindex</code>.</li>
+        <li><strong>Scroll throttling</strong> — 1-second debounce with a 200px minimum distance threshold.</li>
+        <li><strong>Change events</strong> — removed entirely (redundant with debounced input).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 3 ======================== -->
+  <div class="chapter-block" data-chapter="3">
+    <div class="chapter-header" id="ch-3">
+      <span class="ch-badge">3</span>
+      <h2>Session Management</h2>
+    </div>
+
+    <div class="section" id="3-1" data-searchable>
+      <h3>3.1 Save &amp; Load</h3>
+      <div class="feature-grid">
+        <div class="card">
+          <h4>Save</h4>
+          <p>Save the current recording for later use. Give it a meaningful name to keep your library organized.</p>
+        </div>
+        <div class="card">
+          <h4>Load</h4>
+          <p>Load any saved session to review its steps, continue editing, or play it back on the target website.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="3-2" data-searchable>
+      <h3>3.2 Rename &amp; Delete</h3>
+      <div class="feature-grid">
+        <div class="card">
+          <h4>Rename</h4>
+          <p>Click the session name to edit it inline. Press Enter or click away to confirm.</p>
+        </div>
+        <div class="card">
+          <h4>Delete</h4>
+          <p>Remove sessions you no longer need. This action is immediate and cannot be undone.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="3-3" data-searchable>
+      <h3>3.3 Storage</h3>
+      <p>Sessions are stored in <code>chrome.storage.local</code> and persist across browser restarts. Storage is per-browser-profile — sessions are not synced across devices.</p>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 4 ======================== -->
+  <div class="chapter-block" data-chapter="4">
+    <div class="chapter-header" id="ch-4">
+      <span class="ch-badge">4</span>
+      <h2>Visual Guides</h2>
+    </div>
+
+    <div class="section" id="4-1" data-searchable>
+      <h3>4.1 Export an HTML Guide</h3>
+      <p>Turn any recording into a polished, self-contained HTML document with screenshots:</p>
+      <ol class="steps">
+        <li>Stop the current recording (or load a saved session).</li>
+        <li>Click <strong>Export HTML Guide</strong>.</li>
+        <li>A <code>.html</code> file downloads automatically.</li>
+        <li>Open it in any browser to see a step-by-step walkthrough with screenshots, selectors, and timestamps.</li>
+      </ol>
+    </div>
+
+    <div class="section" id="4-2" data-searchable>
+      <h3>4.2 Guide Editor</h3>
+      <p>Before exporting, refine your guide in the built-in editor. Click <strong>Edit Guide</strong> to open it in a new tab.</p>
+      <ul>
+        <li><strong>Three-column layout</strong> — table of contents sidebar, step editor, and live preview.</li>
+        <li><strong>Edit step descriptions</strong> — rewrite auto-generated text to match your documentation style.</li>
+        <li><strong>Reorder or remove steps</strong> — drag steps or delete irrelevant ones.</li>
+        <li><strong>Live preview</strong> — see exactly how the exported guide will look as you edit, with <code>contenteditable</code> support.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="4-3" data-searchable>
+      <h3>4.3 Sharing Guides</h3>
+      <p>Exported guides are completely standalone — no external dependencies, all images embedded as base64. Share them via email, Slack, your team wiki, or any file-sharing platform. Anyone with a web browser can open them.</p>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 5 ======================== -->
+  <div class="chapter-block" data-chapter="5">
+    <div class="chapter-header" id="ch-5">
+      <span class="ch-badge">5</span>
+      <h2>Playback</h2>
+    </div>
+
+    <div class="section" id="5-1" data-searchable>
+      <h3>5.1 Start Playback</h3>
+      <ol class="steps">
+        <li>Navigate to the page where the recording started.</li>
+        <li>Open the Sentinel side panel.</li>
+        <li>Choose a <strong>playback speed</strong>: 0.5x, 1x, 1.5x, 2x, or 4x.</li>
+        <li>Click <strong>Start Playback</strong>.</li>
+      </ol>
+      <p>A progress bar shows the current step number and total steps. During playback, the target element is highlighted with a visual indicator.</p>
+    </div>
+
+    <div class="section" id="5-2" data-searchable>
+      <h3>5.2 Playback Controls</h3>
+      <table>
+        <thead>
+          <tr><th>Control</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Pause</strong></td><td>Temporarily halt playback at the current step.</td></tr>
+          <tr><td><strong>Resume</strong></td><td>Continue playback from where you paused.</td></tr>
+          <tr><td><strong>Stop</strong></td><td>End the playback session entirely.</td></tr>
+          <tr><td><strong>Next Step</strong></td><td>Advance to the next action (step-by-step mode only).</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section" id="5-3" data-searchable>
+      <h3>5.3 Step-by-Step Mode</h3>
+      <p>Enable <strong>step-by-step mode</strong> to advance one action at a time. After each step executes, playback pauses and waits for you to click <strong>Next Step</strong>. This is useful for debugging workflows or demonstrating processes to others.</p>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 6 ======================== -->
+  <div class="chapter-block" data-chapter="6">
+    <div class="chapter-header" id="ch-6">
+      <span class="ch-badge">6</span>
+      <h2>Assertions &amp; Testing</h2>
+    </div>
+
+    <div class="section" id="6-1" data-searchable>
+      <h3>6.1 Adding Assertions</h3>
+      <p>Add assertions to turn recordings into automated tests that validate your application's state.</p>
+      <ol class="steps">
+        <li>Expand the <strong>Assertions</strong> panel in the side panel.</li>
+        <li>Click <strong>Inspect Element</strong> — hover over any element on the page to highlight it, then click to select.</li>
+        <li>Choose an assertion type from the dropdown.</li>
+        <li>Enter an expected value (if required) and click <strong>Add Assertion</strong>.</li>
+      </ol>
+    </div>
+
+    <div class="section" id="6-2" data-searchable>
+      <h3>6.2 Assertion Types</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Is visible</strong></td><td>Asserts the element is visible on the page.</td></tr>
+          <tr><td><strong>Is hidden</strong></td><td>Asserts the element is not visible.</td></tr>
+          <tr><td><strong>Text contains</strong></td><td>Asserts the element's text includes the expected string.</td></tr>
+          <tr><td><strong>Text equals</strong></td><td>Asserts the element's text matches exactly.</td></tr>
+          <tr><td><strong>Has class</strong></td><td>Asserts the element has the specified CSS class.</td></tr>
+          <tr><td><strong>Exists in DOM</strong></td><td>Asserts the element exists in the document.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section" id="6-3" data-searchable>
+      <h3>6.3 Test Reports</h3>
+      <p>Assertions are evaluated automatically during playback after their assigned step. When playback completes, a <strong>Test Report</strong> displays pass/fail results for each assertion with details about what was expected versus what was found.</p>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 7 ======================== -->
+  <div class="chapter-block" data-chapter="7">
+    <div class="chapter-header" id="ch-7">
+      <span class="ch-badge">7</span>
+      <h2>Error Tracking</h2>
+    </div>
+
+    <div class="section" id="7-1" data-searchable>
+      <h3>7.1 Captured Errors</h3>
+      <p>Sentinel automatically captures JavaScript errors and network failures from the pages you're testing. View them in the <strong>Errors</strong> tab.</p>
+      <table>
+        <thead>
+          <tr><th>Source</th><th>What's Captured</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>console.error</code></td><td>Explicit error logging from application code.</td></tr>
+          <tr><td><code>window.onerror</code></td><td>Uncaught exceptions with file, line, and column info.</td></tr>
+          <tr><td>Promise rejections</td><td>Unhandled promise rejections with reason and stack.</td></tr>
+          <tr><td>CSP violations</td><td>Content Security Policy violations with directive and blocked URI.</td></tr>
+          <tr><td>Network failures</td><td>Failed HTTP requests detected via PerformanceObserver.</td></tr>
+        </tbody>
+      </table>
+      <p>Errors are linked to the recording timeline, so you can see exactly when they occurred relative to your actions.</p>
+    </div>
+
+    <div class="section" id="7-2" data-searchable>
+      <h3>7.2 Issue Reports</h3>
+      <p>Export captured errors and steps as a standalone <strong>issue report</strong> HTML document designed for sharing with developers. Reports include:</p>
+      <ul>
+        <li>Error messages and stack traces</li>
+        <li>Steps to reproduce (from the recording)</li>
+        <li>Screenshots at each step</li>
+        <li>Browser and page metadata</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 8 ======================== -->
+  <div class="chapter-block" data-chapter="8">
+    <div class="chapter-header" id="ch-8">
+      <span class="ch-badge">8</span>
+      <h2>Video Recording</h2>
+    </div>
+
+    <div class="section" id="8-1" data-searchable>
+      <h3>8.1 Capture a Video</h3>
+      <p>Click <strong>Record Video</strong> in the header controls to start a screen capture of the active browser tab. The recording runs alongside step recording — you can capture both simultaneously.</p>
+      <ul>
+        <li>Video is encoded as <strong>WebM</strong> (VP9/VP8 codec) at 1 Mbps.</li>
+        <li>Maximum recording duration is <strong>5 minutes</strong> per clip.</li>
+      </ul>
+    </div>
+
+    <div class="section" id="8-2" data-searchable>
+      <h3>8.2 Managing Clips</h3>
+      <p>View all recorded clips in the <strong>Videos</strong> tab. Each clip shows a thumbnail preview. Click any clip to enlarge it in a modal viewer.</p>
+    </div>
+
+    <div class="section" id="8-3" data-searchable>
+      <h3>8.3 Limitations</h3>
+      <div class="callout warning">
+        <strong>Side panel limitation</strong>
+        Native fullscreen is not available within Chrome side panels. Use the enlarge modal to view videos at a larger size.
+      </div>
+      <p>Video clips are stored as blob URLs in memory and are <strong>not</strong> persisted across browser restarts. Export or download clips before closing the browser if you need to keep them.</p>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 9 ======================== -->
+  <div class="chapter-block" data-chapter="9">
+    <div class="chapter-header" id="ch-9">
+      <span class="ch-badge">9</span>
+      <h2>UI Reference</h2>
+    </div>
+
+    <div class="section" id="9-1" data-searchable>
+      <h3>9.1 Side Panel Layout</h3>
+      <p>The Sentinel side panel is organized into collapsible sections:</p>
+      <table>
+        <thead>
+          <tr><th>Section</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Header</strong></td><td>Logo, title, and quick-access controls (Record, Video, Export).</td></tr>
+          <tr><td><strong>Status Bar</strong></td><td>Shows current state: Idle, Recording, Playing, or Paused.</td></tr>
+          <tr><td><strong>Steps Tab</strong></td><td>Live list of recorded actions with type, selector, and value.</td></tr>
+          <tr><td><strong>Errors Tab</strong></td><td>Captured JavaScript errors and network failures.</td></tr>
+          <tr><td><strong>Videos Tab</strong></td><td>Recorded screen capture clips with thumbnails.</td></tr>
+          <tr><td><strong>Recording Controls</strong></td><td>Start/Stop recording buttons.</td></tr>
+          <tr><td><strong>Playback Controls</strong></td><td>Speed selector, step-by-step toggle, play/pause/stop, progress bar.</td></tr>
+          <tr><td><strong>Sessions</strong></td><td>Save, load, rename, and delete recorded sessions.</td></tr>
+          <tr><td><strong>Assertions</strong></td><td>Element inspector and assertion builder for automated tests.</td></tr>
+          <tr><td><strong>Test Report</strong></td><td>Pass/fail results after playback with assertions.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section" id="9-2" data-searchable>
+      <h3>9.2 Captured Keyboard Events</h3>
+      <p>During recording, Sentinel captures these keyboard events:</p>
+      <table>
+        <thead>
+          <tr><th>Category</th><th>Keys</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Navigation</td><td><kbd>Enter</kbd> <kbd>Tab</kbd> <kbd>Escape</kbd></td></tr>
+          <tr><td>Arrow keys</td><td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd></td></tr>
+          <tr><td>Function keys</td><td><kbd>F1</kbd> through <kbd>F12</kbd></td></tr>
+          <tr><td>Modifier combos</td><td><kbd>Ctrl</kbd>+key, <kbd>Alt</kbd>+key, <kbd>Cmd</kbd>+key</td></tr>
+        </tbody>
+      </table>
+      <p>Regular character typing is captured as text input events (debounced), not individual key presses.</p>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 10 ======================== -->
+  <div class="chapter-block" data-chapter="10">
+    <div class="chapter-header" id="ch-10">
+      <span class="ch-badge">10</span>
+      <h2>Architecture</h2>
+    </div>
+
+    <div class="section" id="10-1" data-searchable>
+      <h3>10.1 Project Structure</h3>
+      <pre><code>extension/
+  src/
+    types.ts                &mdash; Shared TypeScript interfaces
+    background.ts           &mdash; Service worker (state, screenshots, routing)
+    content.ts              &mdash; Content script (recording, playback, inspection)
+    App.tsx                 &mdash; Main React shell
+    main.tsx                &mdash; React entry point
+    index.css               &mdash; Tailwind CSS entry
+    editor.tsx              &mdash; Guide editor entry point
+    EditorApp.tsx           &mdash; Guide editor React app
+    lib/
+      messages.ts           &mdash; Typed message bus
+      storage.ts            &mdash; Session CRUD operations
+      guideHtml.ts          &mdash; HTML generation for guides &amp; reports
+    hooks/
+      useExtensionState.ts  &mdash; Reactive hook via chrome.storage.onChanged
+    components/
+      Header.tsx            &mdash; Logo + title + quick controls
+      StatusBar.tsx         &mdash; State indicator
+      RecordingControls.tsx &mdash; Start/Stop recording
+      PlaybackControls.tsx  &mdash; Speed, step-by-step, progress
+      StepList.tsx          &mdash; Live action list
+      ExportButton.tsx      &mdash; Export HTML guide
+      SessionManager.tsx    &mdash; Session CRUD UI
+      AssertionBuilder.tsx  &mdash; Element inspector + assertions
+      TestReport.tsx        &mdash; Pass/fail results table
+      Footer.tsx            &mdash; Version info
+  public/
+    manifest.json           &mdash; MV3 manifest
+  dist/                     &mdash; Production build output</code></pre>
+    </div>
+
+    <div class="section" id="10-2" data-searchable>
+      <h3>10.2 Tech Stack</h3>
+      <div class="feature-grid">
+        <div class="card">
+          <h4>React 19</h4>
+          <p>UI framework for the side panel and guide editor.</p>
+        </div>
+        <div class="card">
+          <h4>TypeScript 5.9</h4>
+          <p>Strict mode with shared types across all extension contexts.</p>
+        </div>
+        <div class="card">
+          <h4>Vite 8</h4>
+          <p>Fast build tooling with multi-entry support (main, background, content).</p>
+        </div>
+        <div class="card">
+          <h4>Tailwind CSS v4</h4>
+          <p>Utility-first styling via PostCSS integration. Zero runtime JS.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="10-3" data-searchable>
+      <h3>10.3 Chrome APIs</h3>
+      <table>
+        <thead>
+          <tr><th>Permission</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>activeTab</code></td><td>Access the current tab for screenshots and script injection.</td></tr>
+          <tr><td><code>storage</code></td><td>Persist sessions and state across browser restarts.</td></tr>
+          <tr><td><code>scripting</code></td><td>Inject the content script into web pages.</td></tr>
+          <tr><td><code>downloads</code></td><td>Trigger file downloads for exported guides.</td></tr>
+          <tr><td><code>tabs</code></td><td>Query and interact with browser tabs.</td></tr>
+          <tr><td><code>sidePanel</code></td><td>Open the persistent side panel UI.</td></tr>
+          <tr><td><code>tabCapture</code></td><td>Capture tab media streams for video recording.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ======================== CHAPTER 11 ======================== -->
+  <div class="chapter-block" data-chapter="11">
+    <div class="chapter-header" id="ch-11">
+      <span class="ch-badge">11</span>
+      <h2>Troubleshooting</h2>
+    </div>
+
+    <div class="section" id="11-1" data-searchable>
+      <h3>11.1 Common Issues</h3>
+
+      <div class="card">
+        <h4>Side panel doesn't open</h4>
+        <p>Make sure you're on a regular web page (not <code>chrome://</code> or <code>chrome-extension://</code> pages). The extension requires an active tab with a URL that allows content script injection.</p>
+      </div>
+
+      <div class="card">
+        <h4>Recording doesn't capture actions</h4>
+        <p>Reload the extension from <code>chrome://extensions/</code> and refresh the target page. The content script must be injected before recording starts.</p>
+      </div>
+
+      <div class="card">
+        <h4>Playback skips steps or fails</h4>
+        <p>Ensure you're on the same page (or starting URL) where the recording began. If the page content has changed, selectors may no longer match the expected elements.</p>
+      </div>
+
+      <div class="card">
+        <h4>Export produces a large file</h4>
+        <p>Screenshots are embedded as base64 JPEG (70% quality). For long recordings with many steps, the exported file can be several megabytes. Consider trimming unnecessary steps in the guide editor before exporting.</p>
+      </div>
+
+      <div class="card">
+        <h4>Video recording not available</h4>
+        <p>Video capture requires the <code>tabCapture</code> permission. Ensure the extension has this permission and that no other extension is currently capturing the tab.</p>
+      </div>
+    </div>
+
+    <div class="section" id="11-2" data-searchable>
+      <h3>11.2 Development Workflow</h3>
+      <ol class="steps">
+        <li>Edit source files in <code>extension/src/</code>.</li>
+        <li>Run <code>npm run build</code> (or use <code>npm run dev</code> for watch mode).</li>
+        <li>Open <code>chrome://extensions/</code> and click the <strong>reload</strong> icon on the Sentinel card.</li>
+        <li>Click the toolbar icon to reopen the side panel with your changes.</li>
+      </ol>
+      <div class="callout">
+        <strong>Hot reloading</strong>
+        Chrome does not support true hot-reload for extensions. You must manually click the reload button and reopen the side panel after each build.
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="guide-footer">
+    Sentinel User Guide
+  </div>
+
+</main>
+
+<!-- BACK TO TOP -->
+<button id="back-to-top" aria-label="Back to top">&uarr;</button>
+
+<script>
+(function() {
+  'use strict';
+
+  /* ---- Mobile nav ---- */
+  const sidebar = document.getElementById('sidebar');
+  const navToggle = document.getElementById('nav-toggle');
+  const navOverlay = document.getElementById('nav-overlay');
+
+  navToggle.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    navOverlay.classList.toggle('open');
+  });
+
+  navOverlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    navOverlay.classList.remove('open');
+  });
+
+  /* Close mobile nav on link click */
+  document.querySelectorAll('.chapter-sections a').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 960) {
+        sidebar.classList.remove('open');
+        navOverlay.classList.remove('open');
+      }
+    });
+  });
+
+  /* ---- Chapter toggle ---- */
+  window.toggleChapter = function(btn) {
+    btn.closest('.chapter-group').classList.toggle('open');
+  };
+
+  /* ---- Active section tracking ---- */
+  const tocLinks = document.querySelectorAll('.chapter-sections a');
+  const sections = document.querySelectorAll('.section[id]');
+
+  function updateActive() {
+    let current = '';
+    for (const sec of sections) {
+      if (sec.getBoundingClientRect().top <= 120) current = sec.id;
+    }
+    tocLinks.forEach(a => {
+      const isActive = a.getAttribute('href') === '#' + current;
+      a.classList.toggle('active', isActive);
+      if (isActive) {
+        const group = a.closest('.chapter-group');
+        if (group && !group.classList.contains('open')) group.classList.add('open');
+      }
+    });
+  }
+
+  let scrollTick = false;
+  window.addEventListener('scroll', () => {
+    if (!scrollTick) {
+      requestAnimationFrame(() => { updateActive(); scrollTick = false; });
+      scrollTick = true;
+    }
+  });
+  updateActive();
+
+  /* ---- Back to top ---- */
+  const btt = document.getElementById('back-to-top');
+  window.addEventListener('scroll', () => {
+    btt.classList.toggle('visible', window.scrollY > 400);
+  });
+  btt.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  /* ============ SEARCH ============ */
+  const searchInput = document.getElementById('search');
+  const searchClear = document.getElementById('search-clear');
+  const searchInfo = document.getElementById('search-info');
+  const noResults = document.getElementById('no-results');
+  const allSections = document.querySelectorAll('.section[data-searchable]');
+  const chapterBlocks = document.querySelectorAll('.chapter-block');
+  const chapterGroups = document.querySelectorAll('.chapter-group');
+
+  /* Build search index */
+  const searchIndex = [];
+  allSections.forEach(sec => {
+    const chapter = sec.closest('.chapter-block').dataset.chapter;
+    searchIndex.push({
+      id: sec.id,
+      chapter: chapter,
+      text: sec.textContent.toLowerCase(),
+      el: sec
+    });
+  });
+
+  let debounceTimer;
+
+  searchInput.addEventListener('input', () => {
+    searchInput.classList.toggle('has-value', searchInput.value.length > 0);
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(doSearch, 200);
+  });
+
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    searchInput.classList.remove('has-value');
+    clearSearch();
+    searchInput.focus();
+  });
+
+  /* Keyboard shortcut: Ctrl+K or / to focus search */
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey && e.key === 'k') || (e.key === '/' && document.activeElement.tagName !== 'INPUT')) {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+    if (e.key === 'Escape' && document.activeElement === searchInput) {
+      searchInput.blur();
+      searchClear.click();
+    }
+  });
+
+  function doSearch() {
+    const raw = searchInput.value.trim();
+    if (!raw) { clearSearch(); return; }
+
+    const terms = raw.toLowerCase().split(/\s+/).filter(Boolean);
+    const matchedSections = new Set();
+    const matchedChapters = new Set();
+
+    searchIndex.forEach(entry => {
+      const matches = terms.every(t => entry.text.includes(t));
+      if (matches) {
+        matchedSections.add(entry.id);
+        matchedChapters.add(entry.chapter);
+      }
+    });
+
+    /* Show/hide sections */
+    allSections.forEach(sec => {
+      sec.classList.toggle('search-hidden', !matchedSections.has(sec.id));
+    });
+
+    /* Show/hide chapter blocks */
+    chapterBlocks.forEach(cb => {
+      const ch = cb.dataset.chapter;
+      cb.style.display = matchedChapters.has(ch) ? '' : 'none';
+    });
+
+    /* Show/hide nav groups + auto-expand matched */
+    chapterGroups.forEach(cg => {
+      const ch = cg.dataset.chapter;
+      const visible = matchedChapters.has(ch);
+      cg.classList.toggle('search-hidden', !visible);
+      if (visible) cg.classList.add('open');
+    });
+
+    /* Hide/show nav links */
+    tocLinks.forEach(a => {
+      const sectionId = a.getAttribute('href').substring(1);
+      a.style.display = matchedSections.has(sectionId) ? '' : 'none';
+    });
+
+    /* Highlight matches in content */
+    clearHighlights();
+    if (terms.length > 0) {
+      highlightTerms(terms);
+    }
+
+    /* Info bar */
+    searchInfo.textContent = matchedSections.size + ' section' + (matchedSections.size !== 1 ? 's' : '') + ' found';
+    searchInfo.classList.add('visible');
+    noResults.style.display = matchedSections.size === 0 ? 'block' : 'none';
+  }
+
+  function clearSearch() {
+    allSections.forEach(sec => sec.classList.remove('search-hidden'));
+    chapterBlocks.forEach(cb => cb.style.display = '');
+    chapterGroups.forEach(cg => cg.classList.remove('search-hidden'));
+    tocLinks.forEach(a => a.style.display = '');
+    searchInfo.classList.remove('visible');
+    noResults.style.display = 'none';
+    clearHighlights();
+  }
+
+  /* ---- Highlight engine ---- */
+  function highlightTerms(terms) {
+    const escapedTerms = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp('(' + escapedTerms.join('|') + ')', 'gi');
+
+    allSections.forEach(sec => {
+      if (sec.classList.contains('search-hidden')) return;
+      walkTextNodes(sec, node => {
+        /* Skip code blocks and pre elements */
+        if (node.parentElement.closest('pre, code')) return;
+        const text = node.textContent;
+        if (!regex.test(text)) return;
+        regex.lastIndex = 0;
+
+        const frag = document.createDocumentFragment();
+        let lastIndex = 0;
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          if (match.index > lastIndex) {
+            frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+          }
+          const mark = document.createElement('mark');
+          mark.className = 'search-hl';
+          mark.textContent = match[0];
+          frag.appendChild(mark);
+          lastIndex = regex.lastIndex;
+        }
+        if (lastIndex < text.length) {
+          frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+        }
+        node.parentNode.replaceChild(frag, node);
+      });
+    });
+  }
+
+  function walkTextNodes(el, callback) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(callback);
+  }
+
+  function clearHighlights() {
+    document.querySelectorAll('mark.search-hl').forEach(mark => {
+      const parent = mark.parentNode;
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    });
+  }
+
+})();
+</script>
+
+</body>
+</html>

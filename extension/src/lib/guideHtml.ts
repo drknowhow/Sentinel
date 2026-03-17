@@ -1,0 +1,202 @@
+import type { Action, GuideEdits, Issue } from '../types';
+
+export function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string {
+  const guideTitle = edits?.guideTitle || 'Sentinel Visual Guide';
+  const introText = edits?.introText || '';
+  const conclusionText = edits?.conclusionText || '';
+
+  // Build ordered step list from edits (or fall back to all actions)
+  const stepsData = edits
+    ? edits.steps
+        .filter(s => s.included)
+        .map(s => ({ action: actions[s.originalIndex], edit: s }))
+        .filter(s => s.action) // guard against stale indices
+    : actions.map((a, i) => ({
+        action: a,
+        edit: { originalIndex: i, title: '', notes: '', includeScreenshot: true, included: true },
+      }));
+
+  const steps = stepsData
+    .map(({ action, edit }, index) => {
+      const desc = edit.title || action.description || action.type.toUpperCase();
+
+      const showScreenshot = edit.includeScreenshot && action.screenshot;
+      const screenshotHtml = showScreenshot
+        ? `<details class="screenshot-details">
+            <summary class="screenshot-thumb">
+              <img src="${action.screenshot}" alt="Step ${index + 1}" class="thumb" loading="lazy">
+              <span class="thumb-hint">Click to enlarge</span>
+            </summary>
+            <img src="${action.screenshot}" alt="Step ${index + 1} full" class="full" loading="lazy">
+          </details>`
+        : '';
+
+      const notesHtml = edit.notes
+        ? `<div class="step-notes"><p>${escapeHtml(edit.notes)}</p></div>`
+        : '';
+
+      return `
+    <div class="step">
+      <div class="step-header">
+        <span class="step-num">${index + 1}</span>
+        <h3>${escapeHtml(desc)}</h3>
+      </div>
+      ${notesHtml}
+      <p class="selector"><strong>Selector:</strong> <code>${escapeHtml(action.selector)}</code></p>
+      ${action.value ? `<p><strong>Value:</strong> <code>${escapeHtml(action.value)}</code></p>` : ''}
+      <p class="timestamp">${new Date(action.timestamp).toLocaleString()}</p>
+      ${screenshotHtml}
+    </div>`;
+    })
+    .join('');
+
+  const introHtml = introText ? `<div class="intro"><p>${escapeHtml(introText)}</p></div>` : '';
+  const conclusionHtml = conclusionText ? `<div class="conclusion"><p>${escapeHtml(conclusionText)}</p></div>` : '';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>${escapeHtml(guideTitle)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 40px 20px; background: #f9f9f9; }
+    h1 { color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+    .intro, .conclusion { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+    .intro p, .conclusion p { margin: 0; }
+    .step { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .step-num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: #007bff; color: #fff; font-weight: bold; font-size: 0.85em; flex-shrink: 0; }
+    h3 { margin: 0; color: #222; font-size: 1.05em; }
+    .step-notes { background: #f0f9ff; border-left: 3px solid #3b82f6; padding: 8px 12px; margin-bottom: 8px; border-radius: 0 4px 4px 0; }
+    .step-notes p { margin: 0; font-size: 0.9em; }
+    .selector { font-size: 0.85em; color: #666; }
+    code { background: #eee; padding: 2px 4px; border-radius: 4px; font-size: 0.9em; word-break: break-all; }
+    .timestamp { font-size: 0.8em; color: #888; }
+    footer { text-align: center; margin-top: 40px; font-size: 0.8em; color: #aaa; }
+    .screenshot-details { margin-top: 12px; }
+    .screenshot-thumb { cursor: pointer; display: inline-flex; align-items: center; gap: 8px; list-style: none; }
+    .screenshot-thumb::-webkit-details-marker { display: none; }
+    .thumb { width: 160px; height: auto; border: 1px solid #ddd; border-radius: 4px; transition: box-shadow 0.15s; }
+    .thumb:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .thumb-hint { font-size: 0.75em; color: #999; }
+    .screenshot-details[open] .thumb-hint { display: none; }
+    .full { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; margin-top: 8px; display: block; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(guideTitle)}</h1>
+  <p>Generated on ${new Date().toLocaleString()} &mdash; ${stepsData.length} steps</p>
+  ${introHtml}
+  ${steps}
+  ${conclusionHtml}
+  <footer>Generated by Sentinel Extension</footer>
+</body>
+</html>`;
+}
+
+export function generateIssueReportHTML(issues: Issue[]): string {
+  const bugs = issues.filter(i => i.type === 'bug');
+  const features = issues.filter(i => i.type === 'feature-request');
+
+  const severityColor: Record<string, string> = {
+    critical: '#dc2626', high: '#ea580c', medium: '#ca8a04', low: '#16a34a',
+  };
+  const typeLabel: Record<string, string> = {
+    bug: 'Bug', 'feature-request': 'Feature Request',
+  };
+
+  const cards = issues
+    .map((issue) => {
+      const sColor = severityColor[issue.severity] || '#666';
+      const tLabel = typeLabel[issue.type] || issue.type;
+      const typeBg = issue.type === 'bug' ? '#fef2f2' : '#f0f9ff';
+      const typeBorder = issue.type === 'bug' ? '#fecaca' : '#bae6fd';
+
+      const screenshotHtml = issue.screenshot
+        ? `<details class="screenshot-details">
+            <summary class="screenshot-thumb">
+              <img src="${issue.screenshot}" alt="Screenshot" class="thumb" loading="lazy">
+              <span class="thumb-hint">Click to enlarge</span>
+            </summary>
+            <img src="${issue.screenshot}" alt="Screenshot full" class="full" loading="lazy">
+          </details>`
+        : '';
+
+      const errorHtml = issue.capturedError
+        ? `<div class="error-detail">
+            <p><strong>Source:</strong> ${escapeHtml(issue.capturedError.source)}</p>
+            <p><strong>Error:</strong> ${escapeHtml(issue.capturedError.message)}</p>
+            ${issue.capturedError.stack ? `<pre class="stack">${escapeHtml(issue.capturedError.stack)}</pre>` : ''}
+            ${issue.capturedError.url ? `<p><strong>URL:</strong> <code>${escapeHtml(issue.capturedError.url)}</code></p>` : ''}
+          </div>`
+        : '';
+
+      return `
+    <div class="issue" style="background: ${typeBg}; border-color: ${typeBorder};">
+      <div class="issue-header">
+        <span class="badge type-badge">${tLabel}</span>
+        <span class="badge" style="background: ${sColor};">${issue.severity}</span>
+        <h3>${escapeHtml(issue.title)}</h3>
+      </div>
+      <p class="page-url"><strong>Page:</strong> <code>${escapeHtml(issue.pageUrl)}</code></p>
+      ${issue.selector ? `<p><strong>Element:</strong> <code>${escapeHtml(issue.selector)}</code></p>` : ''}
+      ${issue.notes ? `<div class="notes"><strong>Notes:</strong><p>${escapeHtml(issue.notes)}</p></div>` : ''}
+      ${errorHtml}
+      <p class="timestamp">${new Date(issue.createdAt).toLocaleString()}</p>
+      ${screenshotHtml}
+    </div>`;
+    })
+    .join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Sentinel Issue Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 40px 20px; background: #f9f9f9; }
+    h1 { color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+    .summary { display: flex; gap: 16px; margin-bottom: 24px; }
+    .summary-card { flex: 1; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; text-align: center; }
+    .summary-card .num { font-size: 2em; font-weight: bold; }
+    .issue { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .issue-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; color: #fff; font-size: 0.75em; font-weight: bold; text-transform: uppercase; }
+    .type-badge { background: #6366f1; }
+    h3 { margin: 0; color: #222; font-size: 1.05em; }
+    code { background: #eee; padding: 2px 4px; border-radius: 4px; font-size: 0.9em; word-break: break-all; }
+    .notes { margin: 8px 0; padding: 8px; background: rgba(255,255,255,0.7); border-radius: 4px; }
+    .notes p { margin: 4px 0 0; }
+    .error-detail { margin: 8px 0; padding: 8px; background: #fff5f5; border: 1px solid #fecaca; border-radius: 4px; font-size: 0.9em; }
+    .error-detail p { margin: 4px 0; }
+    .stack { background: #1e1e1e; color: #d4d4d4; padding: 8px; border-radius: 4px; font-size: 0.8em; overflow-x: auto; white-space: pre-wrap; max-height: 200px; }
+    .page-url { font-size: 0.85em; color: #666; }
+    .timestamp { font-size: 0.8em; color: #888; }
+    footer { text-align: center; margin-top: 40px; font-size: 0.8em; color: #aaa; }
+    .screenshot-details { margin-top: 12px; }
+    .screenshot-thumb { cursor: pointer; display: inline-flex; align-items: center; gap: 8px; list-style: none; }
+    .screenshot-thumb::-webkit-details-marker { display: none; }
+    .thumb { width: 160px; height: auto; border: 1px solid #ddd; border-radius: 4px; transition: box-shadow 0.15s; }
+    .thumb:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .thumb-hint { font-size: 0.75em; color: #999; }
+    .screenshot-details[open] .thumb-hint { display: none; }
+    .full { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; margin-top: 8px; display: block; }
+  </style>
+</head>
+<body>
+  <h1>Sentinel Issue Report</h1>
+  <p>Generated on ${new Date().toLocaleString()}</p>
+  <div class="summary">
+    <div class="summary-card"><div class="num" style="color:#dc2626;">${bugs.length}</div>Bugs</div>
+    <div class="summary-card"><div class="num" style="color:#6366f1;">${features.length}</div>Feature Requests</div>
+    <div class="summary-card"><div class="num">${issues.length}</div>Total</div>
+  </div>
+  ${cards}
+  <footer>Generated by Sentinel Extension</footer>
+</body>
+</html>`;
+}
