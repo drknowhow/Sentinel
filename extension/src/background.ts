@@ -1,7 +1,56 @@
-import type { Action, Message, Assertion, AssertionResult, PlaybackConfig, CapturedError, GuideEdits, Issue } from './types';
+import type { Action, Message, Assertion, AssertionResult, PlaybackConfig, CapturedError, GuideEdits, Issue, AiLogEntry } from './types';
 import { onMessage, sendToTab } from './lib/messages';
 import { saveIssue, deleteIssue, getIssues } from './lib/storage';
 import { generateGuideHTML, generateIssueReportHTML } from './lib/guideHtml';
+
+// ── AI Activity Log ──
+
+const MAX_LOG_ENTRIES = 60;
+
+function getCommandMeta(command: string, payload: Record<string, unknown>): { label: string; detail?: string } {
+  switch (command) {
+    case 'API_GET_STATUS':           return { label: 'Check Status' };
+    case 'API_NAVIGATE':             return { label: 'Navigate', detail: payload.url as string };
+    case 'API_SCREENSHOT':           return { label: 'Screenshot' };
+    case 'API_START_RECORDING':      return { label: 'Start Recording' };
+    case 'API_STOP_RECORDING':       return { label: 'Stop Recording' };
+    case 'API_GET_SESSION':          return { label: 'Get Session' };
+    case 'API_INJECT_ACTION':        return { label: `Inject ${payload.type ?? 'action'}`, detail: payload.selector as string };
+    case 'API_GENERATE_GUIDE':       return { label: 'Generate Guide', detail: (payload.title as string) || undefined };
+    case 'API_START_ERROR_TRACKING': return { label: 'Start Error Tracking' };
+    case 'API_STOP_ERROR_TRACKING':  return { label: 'Stop Error Tracking' };
+    case 'API_GET_ERRORS':           return { label: 'Get Errors' };
+    case 'API_SAVE_ISSUE':           return { label: 'Save Issue', detail: payload.title as string };
+    case 'API_GET_ISSUES':           return { label: 'Get Issues' };
+    case 'API_GENERATE_REPORT':      return { label: 'Generate Report' };
+    case 'API_WAIT_FOR_ELEMENT':     return { label: 'Wait for Element', detail: payload.selector as string };
+    case 'API_EVALUATE_SELECTOR':    return { label: 'Evaluate Selector', detail: payload.selector as string };
+    default:                         return { label: command.replace(/^API_/, '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) };
+  }
+}
+
+// Track commands in flight so wsSend can record their outcome
+const _pendingCmds = new Map<string, { command: string; payload: Record<string, unknown>; startMs: number }>();
+
+function appendAiLog(command: string, payload: Record<string, unknown>, startMs: number, success: boolean, error?: string): void {
+  const { label, detail } = getCommandMeta(command, payload);
+  const entry: AiLogEntry = {
+    id: `${startMs}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: startMs,
+    command,
+    label,
+    ...(detail ? { detail } : {}),
+    status: success ? 'success' : 'error',
+    durationMs: Date.now() - startMs,
+    ...(error ? { error } : {}),
+  };
+  chrome.storage.local.get('aiActivityLog', (result) => {
+    const log = (result.aiActivityLog as AiLogEntry[]) || [];
+    log.unshift(entry);
+    if (log.length > MAX_LOG_ENTRIES) log.length = MAX_LOG_ENTRIES;
+    chrome.storage.local.set({ aiActivityLog: log });
+  });
+}
 
 // ── WebSocket Bridge (MCP ↔ Extension) ──
 
@@ -61,6 +110,12 @@ function wsSend(id: string, success: boolean, data?: unknown, error?: string) {
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ id, success, ...(success ? { data } : { error }) }));
   }
+  // Log the completed command
+  const pending = _pendingCmds.get(id);
+  if (pending) {
+    _pendingCmds.delete(id);
+    appendAiLog(pending.command, pending.payload, pending.startMs, success, error);
+  }
 }
 
 // Keepalive alarm listener
@@ -85,6 +140,7 @@ chrome.runtime.onStartup?.addListener(() => wsConnect());
 // ── API Command Dispatcher ──
 
 async function handleApiCommand(id: string, command: string, payload: Record<string, unknown>) {
+  _pendingCmds.set(id, { command, payload, startMs: Date.now() });
   try {
     switch (command) {
       case 'API_GET_STATUS': {

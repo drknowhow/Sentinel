@@ -135,6 +135,19 @@ export interface AssertionResult {
   error?: string;
 }
 
+// ── AI Activity Log ──
+
+export interface AiLogEntry {
+  id: string;
+  timestamp: number;       // ms since epoch (start of command)
+  command: string;         // raw API_* command name
+  label: string;           // human-readable label
+  detail?: string;         // key param (URL, selector, title…)
+  status: 'success' | 'error';
+  durationMs: number;
+  error?: string;
+}
+
 // ── Issue Tracking ──
 
 export type IssueSeverity = 'low' | 'medium' | 'high' | 'critical';

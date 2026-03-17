@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useExtensionState } from './hooks/useExtensionState';
 import { useVideoRecorder } from './hooks/useVideoRecorder';
 import Header from './components/Header';
@@ -13,9 +13,10 @@ import FeatureRequestBuilder from './components/FeatureRequestBuilder';
 import IssueList from './components/IssueList';
 import Footer from './components/Footer';
 import SettingsPanel from './components/SettingsPanel';
-import type { Assertion } from './types';
+import AiLog from './components/AiLog';
+import type { Assertion, AiLogEntry } from './types';
 
-type FeedTab = 'steps' | 'errors' | 'videos' | 'settings';
+type FeedTab = 'steps' | 'errors' | 'videos' | 'ai' | 'settings';
 
 function TabButton({ active, onClick, label, count, activeColor }: {
   active: boolean; onClick: () => void; label: string; count: number; activeColor: string;
@@ -46,6 +47,19 @@ function App() {
   const video = useVideoRecorder();
   const [assertions, setAssertions] = useState<Assertion[]>([]);
   const [feedTab, setFeedTab] = useState<FeedTab>('steps');
+  const [aiLogCount, setAiLogCount] = useState(0);
+
+  // Track AI log entry count for the tab badge
+  useEffect(() => {
+    chrome.storage.local.get('aiActivityLog', (r) => {
+      setAiLogCount(((r.aiActivityLog as AiLogEntry[]) || []).length);
+    });
+    const handler = (changes: { [k: string]: chrome.storage.StorageChange }) => {
+      if (changes.aiActivityLog) setAiLogCount(((changes.aiActivityLog.newValue as AiLogEntry[]) || []).length);
+    };
+    chrome.storage.onChanged.addListener(handler);
+    return () => chrome.storage.onChanged.removeListener(handler);
+  }, []);
 
   const isPlaying = playback?.isPlaying ?? false;
   const hasActions = currentSession.length > 0;
@@ -92,6 +106,7 @@ function App() {
         <TabButton active={feedTab === 'steps'} onClick={() => setFeedTab('steps')} label="Steps" count={currentSession.length} activeColor="bg-blue-100 text-blue-600" />
         <TabButton active={feedTab === 'errors'} onClick={() => setFeedTab('errors')} label="Errors" count={capturedErrors.length} activeColor="bg-red-100 text-red-600" />
         <TabButton active={feedTab === 'videos'} onClick={() => setFeedTab('videos')} label="Videos" count={video.clips.length + (video.isVideoRecording ? 1 : 0)} activeColor="bg-pink-100 text-pink-600" />
+        <TabButton active={feedTab === 'ai'} onClick={() => setFeedTab('ai')} label="AI" count={aiLogCount} activeColor="bg-cyan-100 text-cyan-700" />
         <TabButton active={feedTab === 'settings'} onClick={() => setFeedTab('settings')} label="Settings" count={0} activeColor="bg-gray-200 text-gray-700" />
       </div>
 
@@ -116,6 +131,7 @@ function App() {
             onDiscard={video.discardClip}
           />
         )}
+        {feedTab === 'ai' && <AiLog />}
         {feedTab === 'settings' && <SettingsPanel />}
       </div>
 
