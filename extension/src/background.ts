@@ -26,8 +26,6 @@ function wsConnect() {
   ws.onopen = () => {
     console.log('Sentinel WS: connected to MCP bridge');
     wsReconnectDelay = WS_RECONNECT_MIN;
-    // Start keepalive alarm to prevent service worker death
-    chrome.alarms.create(WS_KEEPALIVE_INTERVAL, { periodInMinutes: 0.4 }); // ~24s
   };
 
   ws.onmessage = (event) => {
@@ -42,7 +40,8 @@ function wsConnect() {
 
   ws.onclose = () => {
     ws = null;
-    chrome.alarms.clear(WS_KEEPALIVE_INTERVAL);
+    // Do NOT clear the keepalive alarm — it must stay running so the service
+    // worker is periodically woken to retry the connection.
     scheduleReconnect();
   };
 
@@ -71,6 +70,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) wsConnect();
   }
 });
+
+// Keep the alarm running permanently — it wakes the service worker every ~24s
+// to retry the WebSocket connection. Without this, the service worker dies after
+// 30s of inactivity and all pending setTimeout reconnects are lost.
+chrome.alarms.create(WS_KEEPALIVE_INTERVAL, { periodInMinutes: 0.4 });
 
 // Connect on startup
 wsConnect();
