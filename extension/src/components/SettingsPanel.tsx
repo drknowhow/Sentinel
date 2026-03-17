@@ -89,29 +89,43 @@ function Section({ title, children, defaultOpen = false }: {
 
 type LauncherStatus = 'unknown' | 'running' | 'stopped' | 'not_installed';
 
+const LAUNCHER_STATUS_KEY = 'mcpLauncherStatus';
+
 function useMcpLauncher() {
   const [status, setStatus] = useState<LauncherStatus>('unknown');
   const [busy, setBusy] = useState(false);
 
+  // Persist status so it survives tab switches (component unmount/remount)
+  const persist = useCallback((s: LauncherStatus) => {
+    setStatus(s);
+    chrome.storage.local.set({ [LAUNCHER_STATUS_KEY]: s });
+  }, []);
+
   const query = useCallback(async () => {
     try {
       const res = await chrome.runtime.sendMessage({ type: 'MCP_LAUNCHER_STATUS' });
-      if (res?.notInstalled) setStatus('not_installed');
-      else if (res?.status === 'running') setStatus('running');
-      else setStatus('stopped');
+      if (res?.notInstalled) persist('not_installed');
+      else if (res?.status === 'running') persist('running');
+      else persist('stopped');
     } catch {
-      setStatus('not_installed');
+      persist('not_installed');
     }
-  }, []);
+  }, [persist]);
 
-  useEffect(() => { query(); }, [query]);
+  useEffect(() => {
+    // Restore cached status immediately to prevent flash of wrong state
+    chrome.storage.local.get(LAUNCHER_STATUS_KEY, (r) => {
+      if (r[LAUNCHER_STATUS_KEY]) setStatus(r[LAUNCHER_STATUS_KEY] as LauncherStatus);
+    });
+    query();
+  }, [query]);
 
   const start = async () => {
     setBusy(true);
     try {
       const res = await chrome.runtime.sendMessage({ type: 'LAUNCH_MCP_SERVER' });
-      if (res?.notInstalled) setStatus('not_installed');
-      else if (res?.success) setStatus('running');
+      if (res?.notInstalled) persist('not_installed');
+      else if (res?.success) persist('running');
     } finally { setBusy(false); }
   };
 
@@ -119,7 +133,7 @@ function useMcpLauncher() {
     setBusy(true);
     try {
       const res = await chrome.runtime.sendMessage({ type: 'STOP_MCP_SERVER' });
-      if (res?.success) setStatus('stopped');
+      if (res?.success) persist('stopped');
     } finally { setBusy(false); }
   };
 
@@ -127,7 +141,7 @@ function useMcpLauncher() {
     setBusy(true);
     try {
       await chrome.runtime.sendMessage({ type: 'REMOVE_MCP_LAUNCHER' });
-      setStatus('not_installed');
+      persist('not_installed');
     } finally { setBusy(false); }
   };
 
@@ -608,54 +622,62 @@ export default function SettingsPanel() {
                 <StatusBadge status={wsStatus} />
               </div>
               <div className="flex items-center gap-1">
-                {launchStatus === 'not_installed' ? (
-                  <span className="text-[10px] text-amber-600 font-medium">Not installed</span>
-                ) : launchStatus === 'running' ? (
-                  <button
-                    onClick={stop}
-                    disabled={busy}
-                    className="px-2 py-1 text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 disabled:bg-gray-300 rounded transition-colors"
-                  >
-                    {busy ? '…' : 'Stop'}
-                  </button>
-                ) : launchStatus === 'stopped' ? (
-                  <>
+                {/* When WS is connected the server is running — no need to Start */}
+                {wsStatus === 'connected' ? (
+                  launchStatus === 'running' ? (
                     <button
-                      onClick={start}
+                      onClick={stop}
                       disabled={busy}
-                      className="px-2 py-1 text-[10px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-300 rounded transition-colors"
+                      className="px-2 py-1 text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 disabled:bg-gray-300 rounded transition-colors"
                     >
-                      {busy ? '…' : 'Start'}
+                      {busy ? '…' : 'Stop'}
                     </button>
-                    <button
-                      onClick={remove}
-                      disabled={busy}
-                      className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-40 transition-colors"
-                      title="Remove launcher registration"
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
-                    </button>
-                  </>
+                  ) : (
+                    <span className="text-[10px] text-green-600 font-medium">Running</span>
+                  )
                 ) : (
-                  <button
-                    onClick={start}
-                    disabled={busy || launchStatus === 'unknown'}
-                    className="px-2 py-1 text-[10px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-300 rounded transition-colors"
-                  >
-                    {busy ? '…' : 'Start'}
-                  </button>
-                )}
-                {(wsStatus === 'disconnected' || wsStatus === 'error') && (
-                  <button
-                    onClick={reconnectWs}
-                    className="px-2 py-1 text-[10px] font-semibold text-cyan-600 hover:text-cyan-700 border border-gray-200 rounded transition-colors"
-                    title="Force reconnect to MCP server"
-                  >
-                    Reconnect
-                  </button>
+                  /* WS disconnected — show launcher controls */
+                  launchStatus === 'not_installed' ? (
+                    <span className="text-[10px] text-amber-600 font-medium">Not installed</span>
+                  ) : launchStatus === 'running' ? (
+                    <button
+                      onClick={stop}
+                      disabled={busy}
+                      className="px-2 py-1 text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 disabled:bg-gray-300 rounded transition-colors"
+                    >
+                      {busy ? '…' : 'Stop'}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={start}
+                        disabled={busy || launchStatus === 'unknown'}
+                        className="px-2 py-1 text-[10px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-300 rounded transition-colors"
+                      >
+                        {busy ? '…' : 'Start'}
+                      </button>
+                      {launchStatus === 'stopped' && (
+                        <button
+                          onClick={remove}
+                          disabled={busy}
+                          className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-40 transition-colors"
+                          title="Remove launcher registration"
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      )}
+                      <button
+                        onClick={reconnectWs}
+                        className="px-2 py-1 text-[10px] font-semibold text-cyan-600 hover:text-cyan-700 border border-gray-200 rounded transition-colors"
+                        title="Force reconnect to MCP server"
+                      >
+                        Reconnect
+                      </button>
+                    </>
+                  )
                 )}
                 <button
                   onClick={() => { refreshWs(); refreshLauncher(); }}
