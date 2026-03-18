@@ -1,8 +1,379 @@
-import type { Action, GuideEdits, Issue } from '../types';
+import type { Action, GuideEdits, GuideSection, Issue } from '../types';
 
 export function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+// ── Shared Design System ──
+
+export const BASE_STYLES = `
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6; color: #1f2937; background: #f3f4f6;
+    padding: 40px 20px;
+  }
+  .page { max-width: 960px; margin: 0 auto; }
+
+  /* ── Typography ── */
+  h1 { font-size: 1.75em; font-weight: 700; color: #111827; margin-bottom: 4px; }
+  h2 { font-size: 1.2em; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin: 32px 0 16px; }
+  h3 { font-size: 1.05em; font-weight: 600; color: #111827; }
+  p  { margin: 8px 0; }
+  a  { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background: #f1f5f9; color: #0f172a; padding: 2px 6px;
+    border-radius: 4px; font-size: 0.875em; word-break: break-all;
+  }
+  pre {
+    background: #1e293b; color: #e2e8f0; padding: 14px 16px;
+    border-radius: 8px; font-size: 0.82em; overflow-x: auto;
+    white-space: pre-wrap; max-height: 260px; margin: 10px 0;
+  }
+
+  /* ── Layout ── */
+  .two-col   { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .two-col, .three-col { grid-template-columns: 1fr; } }
+
+  /* ── Hero ── */
+  .hero {
+    background: linear-gradient(135deg, #1d4ed8 0%, #7c3aed 100%);
+    color: #fff; border-radius: 12px; padding: 36px 32px; margin-bottom: 32px;
+  }
+  .hero h1 { color: #fff; font-size: 2em; }
+  .hero .subtitle { color: rgba(255,255,255,0.8); font-size: 0.95em; margin-top: 6px; }
+  .hero .meta { color: rgba(255,255,255,0.65); font-size: 0.8em; margin-top: 16px; }
+
+  /* ── Cards ── */
+  .card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+    padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .card + .card { margin-top: 16px; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: 16px; margin: 16px 0; }
+  .card-accent { border-left: 4px solid #2563eb; }
+  .card-accent-green  { border-left: 4px solid #16a34a; }
+  .card-accent-red    { border-left: 4px solid #dc2626; }
+  .card-accent-yellow { border-left: 4px solid #ca8a04; }
+  .card-accent-purple { border-left: 4px solid #7c3aed; }
+  .card h3 { margin-bottom: 8px; }
+
+  /* ── Steps ── */
+  .step {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+    padding: 20px 24px; margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: #2563eb; color: #fff; font-weight: 700; font-size: 0.85em; flex-shrink: 0;
+  }
+  .step-num.done { background: #16a34a; }
+  .substep {
+    border-left: 2px solid #e5e7eb; padding: 8px 0 8px 16px; margin: 8px 0;
+    font-size: 0.93em; color: #374151;
+  }
+  .step-notes {
+    background: #eff6ff; border-left: 3px solid #3b82f6;
+    padding: 8px 12px; margin-bottom: 10px; border-radius: 0 6px 6px 0;
+    font-size: 0.9em;
+  }
+  .selector { font-size: 0.82em; color: #6b7280; margin: 4px 0; }
+  .timestamp { font-size: 0.78em; color: #9ca3af; }
+
+  /* ── Callouts ── */
+  .callout {
+    display: flex; gap: 12px; align-items: flex-start;
+    border-radius: 8px; padding: 12px 16px; margin: 16px 0;
+    font-size: 0.93em;
+  }
+  .callout-note    { background: #eff6ff; border: 1px solid #bfdbfe; }
+  .callout-warning { background: #fffbeb; border: 1px solid #fde68a; }
+  .callout-tip     { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .callout-danger  { background: #fef2f2; border: 1px solid #fecaca; }
+  .callout-success { background: #f0fdf4; border: 1px solid #6ee7b7; }
+  .callout-icon { font-size: 1.1em; flex-shrink: 0; margin-top: 1px; }
+  .callout-body { flex: 1; line-height: 1.5; }
+  .callout-body strong { display: block; margin-bottom: 2px; }
+
+  /* ── Legacy guide-section support ── */
+  .guide-section { display: flex; gap: 10px; align-items: flex-start; border-radius: 8px; padding: 12px 16px; margin: 16px 0; }
+  .guide-note    { background: #eff6ff; border: 1px solid #bfdbfe; }
+  .guide-warning { background: #fffbeb; border: 1px solid #fde68a; }
+  .guide-tip     { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .guide-callout { background: #faf5ff; border: 1px solid #e9d5ff; }
+  .guide-html    { padding: 0; }
+  .section-icon  { font-size: 1.1em; flex-shrink: 0; margin-top: 2px; }
+  .section-body  { font-size: 0.95em; line-height: 1.5; }
+  .guide-heading { color: #374151; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin: 28px 0 16px; font-size: 1.15em; }
+
+  /* ── Keyboard badges ── */
+  .kbd {
+    display: inline-block; background: #f8fafc; border: 1px solid #cbd5e1;
+    border-bottom: 3px solid #94a3b8; border-radius: 5px;
+    padding: 2px 7px; font-family: ui-monospace, monospace;
+    font-size: 0.8em; color: #334155; vertical-align: middle;
+  }
+
+  /* ── Tables ── */
+  .table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.9em; }
+  .table th {
+    background: #f1f5f9; text-align: left; padding: 9px 12px;
+    font-weight: 600; border-bottom: 2px solid #e2e8f0; color: #374151;
+  }
+  .table td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  .table tr:last-child td { border-bottom: none; }
+  .table tr:hover td { background: #fafafa; }
+
+  /* ── Checklist ── */
+  .checklist { list-style: none; margin: 12px 0; padding: 0; }
+  .checklist li { padding: 5px 0 5px 28px; position: relative; }
+  .checklist li::before {
+    content: '✓'; position: absolute; left: 0; color: #16a34a;
+    font-weight: 700; font-size: 0.9em;
+  }
+  .checklist li.pending::before { content: '○'; color: #9ca3af; }
+  .checklist li.warn::before   { content: '!'; color: #ca8a04; }
+
+  /* ── Stats ── */
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin: 20px 0; }
+  .stat {
+    flex: 1; min-width: 100px; background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 10px; padding: 16px; text-align: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .stat .num { font-size: 2em; font-weight: 700; line-height: 1; }
+  .stat .label { font-size: 0.78em; color: #6b7280; margin-top: 4px; }
+  .stat-red    .num { color: #dc2626; }
+  .stat-orange .num { color: #ea580c; }
+  .stat-yellow .num { color: #ca8a04; }
+  .stat-green  .num { color: #16a34a; }
+  .stat-blue   .num { color: #2563eb; }
+  .stat-purple .num { color: #7c3aed; }
+
+  /* ── Severity / Type badges ── */
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 12px;
+    font-size: 0.72em; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; color: #fff; vertical-align: middle;
+  }
+  .badge-critical { background: #dc2626; }
+  .badge-high     { background: #ea580c; }
+  .badge-medium   { background: #ca8a04; }
+  .badge-low      { background: #16a34a; }
+  .badge-bug      { background: #6366f1; }
+  .badge-feature  { background: #0891b2; }
+  .badge-blue     { background: #2563eb; }
+  .badge-gray     { background: #6b7280; }
+
+  /* ── Timeline ── */
+  .timeline { position: relative; padding-left: 28px; margin: 20px 0; }
+  .timeline::before {
+    content: ''; position: absolute; left: 8px; top: 6px; bottom: 6px;
+    width: 2px; background: #e5e7eb; border-radius: 1px;
+  }
+  .timeline-item { position: relative; margin-bottom: 20px; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -24px; top: 6px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #2563eb; border: 2px solid #fff;
+    box-shadow: 0 0 0 2px #2563eb;
+  }
+  .timeline-item .tl-time { font-size: 0.78em; color: #9ca3af; margin-bottom: 2px; }
+  .timeline-item .tl-title { font-weight: 600; color: #111827; }
+  .timeline-item .tl-body { font-size: 0.9em; color: #4b5563; margin-top: 4px; }
+
+  /* ── Screenshots ── */
+  .screenshot-details { margin-top: 14px; }
+  .screenshot-thumb {
+    cursor: pointer; display: inline-flex; align-items: center;
+    gap: 8px; list-style: none;
+  }
+  .screenshot-thumb::-webkit-details-marker { display: none; }
+  .thumb {
+    width: 180px; height: auto; border: 1px solid #e5e7eb;
+    border-radius: 6px; transition: box-shadow 0.15s;
+  }
+  .thumb:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.15); }
+  .thumb-hint { font-size: 0.75em; color: #9ca3af; }
+  .screenshot-details[open] .thumb-hint { display: none; }
+  .full {
+    max-width: 100%; height: auto; border: 1px solid #e5e7eb;
+    border-radius: 6px; margin-top: 10px; display: block;
+  }
+
+  /* ── Error detail ── */
+  .error-detail {
+    background: #fff5f5; border: 1px solid #fecaca; border-radius: 6px;
+    padding: 10px 14px; margin: 10px 0; font-size: 0.88em;
+  }
+  .error-detail p { margin: 3px 0; }
+  .stack {
+    background: #1e293b; color: #94a3b8; padding: 10px 12px;
+    border-radius: 6px; font-size: 0.78em; overflow-x: auto;
+    white-space: pre-wrap; max-height: 200px; margin-top: 6px;
+  }
+
+  /* ── Guide Chapter Breaks ── */
+  .chapter-heading {
+    font-size: 1.15em; font-weight: 700; color: #1d4ed8;
+    border-left: 4px solid #2563eb; padding: 8px 14px;
+    margin: 36px 0 20px; background: #eff6ff;
+    border-radius: 0 8px 8px 0;
+  }
+  .step-count-strip {
+    font-size: 0.75em; color: #9ca3af;
+    text-align: right; margin-bottom: 4px; letter-spacing: 0.03em;
+  }
+  .step-skipped {
+    border: 1px dashed #d1d5db; border-radius: 10px;
+    padding: 10px 16px; margin-bottom: 12px;
+    color: #9ca3af; font-size: 0.85em; background: #fafafa;
+  }
+
+  /* ── Issue Report Cards ── */
+  .issue-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+    padding: 20px; margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .issue-card-critical { border-left: 5px solid #dc2626; background: #fff5f5; }
+  .issue-card-high     { border-left: 5px solid #ea580c; background: #fff7ed; }
+  .issue-card-medium   { border-left: 5px solid #ca8a04; background: #fefce8; }
+  .issue-card-low      { border-left: 5px solid #16a34a; background: #f0fdf4; }
+  .issue-card-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .issue-card-header h3 { margin: 0; flex: 1; min-width: 160px; }
+  .issue-card-meta { font-size: 0.82em; color: #6b7280; margin: 4px 0; }
+  .issue-card-notes {
+    background: rgba(255,255,255,0.7); border-radius: 6px;
+    padding: 8px 12px; margin: 8px 0; font-size: 0.92em;
+  }
+
+  /* ── Section Divider ── */
+  .section-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 32px 0 20px; color: #374151;
+  }
+  .section-divider::before,
+  .section-divider::after { content: ''; flex: 1; border-top: 1px solid #e5e7eb; }
+  .section-divider span {
+    font-size: 0.8em; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; white-space: nowrap;
+  }
+
+  /* ── Page Impact Table ── */
+  .page-impact-row td:first-child { font-family: ui-monospace, monospace; font-size: 0.82em; }
+  .page-impact-badge {
+    display: inline-block; min-width: 22px; text-align: center;
+    padding: 1px 6px; border-radius: 10px; font-size: 0.72em; font-weight: 700;
+    color: #fff; background: #6b7280; margin-right: 4px;
+  }
+  .page-impact-badge.critical { background: #dc2626; }
+  .page-impact-badge.high     { background: #ea580c; }
+
+  /* ── Misc ── */
+  .intro, .conclusion {
+    background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 10px; padding: 18px 20px; margin-bottom: 28px;
+  }
+  footer {
+    text-align: center; margin-top: 48px;
+    font-size: 0.78em; color: #9ca3af;
+    border-top: 1px solid #e5e7eb; padding-top: 20px;
+  }
+  .divider { border: none; border-top: 1px solid #e5e7eb; margin: 28px 0; }
+  .muted  { color: #6b7280; font-size: 0.88em; }
+  .bold   { font-weight: 700; }
+  .center { text-align: center; }
+  .mt-8  { margin-top: 8px; }
+  .mt-16 { margin-top: 16px; }
+  .mb-8  { margin-bottom: 8px; }
+  .mb-16 { margin-bottom: 16px; }
+  .page-url { font-size: 0.82em; color: #6b7280; }
+`;
+
+// ── Custom Guide Renderer ──
+
+/**
+ * Wrap AI-authored HTML body in the base shell with shared styles.
+ * Replaces {{screenshot:N}} placeholders with base64 data URLs.
+ */
+export function renderCustomGuide(
+  body: string,
+  title: string,
+  screenshots: Record<number, string>,
+): string {
+  const resolved = body.replace(/\{\{screenshot:(\d+)\}\}/g, (_, n) => {
+    const src = screenshots[Number(n)];
+    return src
+      ? `<details class="screenshot-details">
+          <summary class="screenshot-thumb">
+            <img src="${src}" alt="Step ${n}" class="thumb" loading="lazy">
+            <span class="thumb-hint">Click to enlarge</span>
+          </summary>
+          <img src="${src}" alt="Step ${n} full" class="full" loading="lazy">
+        </details>`
+      : '';
+  });
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>${escapeHtml(title)}</title>
+  <style>${BASE_STYLES}</style>
+</head>
+<body>
+<div class="page">
+${resolved}
+  <footer>Generated by Sentinel Extension</footer>
+</div>
+</body>
+</html>`;
+}
+
+/**
+ * Wrap AI-authored HTML body in the base shell for issue reports.
+ * Replaces {{screenshot:ISSUE_ID}} placeholders with base64 data URLs.
+ */
+export function renderCustomReport(
+  body: string,
+  title: string,
+  issueScreenshots: Record<string, string>,
+): string {
+  const resolved = body.replace(/\{\{screenshot:([^}]+)\}\}/g, (_, id) => {
+    const src = issueScreenshots[id];
+    return src
+      ? `<details class="screenshot-details">
+          <summary class="screenshot-thumb">
+            <img src="${src}" alt="Screenshot" class="thumb" loading="lazy">
+            <span class="thumb-hint">Click to enlarge</span>
+          </summary>
+          <img src="${src}" alt="Screenshot full" class="full" loading="lazy">
+        </details>`
+      : '';
+  });
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>${escapeHtml(title)}</title>
+  <style>${BASE_STYLES}</style>
+</head>
+<body>
+<div class="page">
+${resolved}
+  <footer>Generated by Sentinel Extension</footer>
+</div>
+</body>
+</html>`;
+}
+
+// ── Standard Guide Generator ──
 
 export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string {
   const guideTitle = edits?.guideTitle || 'Sentinel Visual Guide';
@@ -20,26 +391,39 @@ export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string
         edit: { originalIndex: i, title: '', notes: '', includeScreenshot: true, included: true },
       }));
 
-  const steps = stepsData
-    .map(({ action, edit }, index) => {
-      const desc = edit.title || action.description || action.type.toUpperCase();
+  // Build section map keyed by afterStep index (-1 = before all steps)
+  const sectionMap = new Map<number, GuideSection[]>();
+  for (const sec of (edits?.sections ?? [])) {
+    const key = sec.afterStep ?? -1;
+    if (!sectionMap.has(key)) sectionMap.set(key, []);
+    sectionMap.get(key)!.push(sec);
+  }
 
-      const showScreenshot = edit.includeScreenshot && action.screenshot;
-      const screenshotHtml = showScreenshot
-        ? `<details class="screenshot-details">
-            <summary class="screenshot-thumb">
-              <img src="${action.screenshot}" alt="Step ${index + 1}" class="thumb" loading="lazy">
-              <span class="thumb-hint">Click to enlarge</span>
-            </summary>
-            <img src="${action.screenshot}" alt="Step ${index + 1} full" class="full" loading="lazy">
-          </details>`
-        : '';
+  function renderSections(afterStep: number): string {
+    return (sectionMap.get(afterStep) ?? []).map(sec => {
+      if (sec.type === 'html') return `<div class="guide-section guide-html">${sec.content}</div>`;
+      if (sec.type === 'heading') return `<h2 class="guide-heading">${escapeHtml(sec.content)}</h2>`;
+      const icon = sec.type === 'warning' ? '⚠️' : sec.type === 'tip' ? '💡' : 'ℹ️';
+      return `<div class="guide-section guide-${sec.type}"><span class="section-icon">${icon}</span><div class="section-body">${escapeHtml(sec.content)}</div></div>`;
+    }).join('');
+  }
 
-      const notesHtml = edit.notes
-        ? `<div class="step-notes"><p>${escapeHtml(edit.notes)}</p></div>`
-        : '';
-
-      return `
+  const stepBlocks = stepsData.map(({ action, edit }, index) => {
+    const desc = edit.title || action.description || action.type.toUpperCase();
+    const showScreenshot = edit.includeScreenshot && action.screenshot;
+    const screenshotHtml = showScreenshot
+      ? `<details class="screenshot-details">
+          <summary class="screenshot-thumb">
+            <img src="${action.screenshot}" alt="Step ${index + 1}" class="thumb" loading="lazy">
+            <span class="thumb-hint">Click to enlarge</span>
+          </summary>
+          <img src="${action.screenshot}" alt="Step ${index + 1} full" class="full" loading="lazy">
+        </details>`
+      : '';
+    const notesHtml = edit.notes
+      ? `<div class="step-notes"><p>${escapeHtml(edit.notes)}</p></div>`
+      : '';
+    return `
     <div class="step">
       <div class="step-header">
         <span class="step-num">${index + 1}</span>
@@ -50,9 +434,10 @@ export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string
       ${action.value ? `<p><strong>Value:</strong> <code>${escapeHtml(action.value)}</code></p>` : ''}
       <p class="timestamp">${new Date(action.timestamp).toLocaleString()}</p>
       ${screenshotHtml}
-    </div>`;
-    })
-    .join('');
+    </div>${renderSections(index)}`;
+  });
+
+  const steps = renderSections(-1) + stepBlocks.join('');
 
   const introHtml = introText ? `<div class="intro"><p>${escapeHtml(introText)}</p></div>` : '';
   const conclusionHtml = conclusionText ? `<div class="conclusion"><p>${escapeHtml(conclusionText)}</p></div>` : '';
@@ -61,39 +446,17 @@ export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string
 <html>
 <head>
   <title>${escapeHtml(guideTitle)}</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 40px 20px; background: #f9f9f9; }
-    h1 { color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-    .intro, .conclusion { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
-    .intro p, .conclusion p { margin: 0; }
-    .step { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .step-num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: #007bff; color: #fff; font-weight: bold; font-size: 0.85em; flex-shrink: 0; }
-    h3 { margin: 0; color: #222; font-size: 1.05em; }
-    .step-notes { background: #f0f9ff; border-left: 3px solid #3b82f6; padding: 8px 12px; margin-bottom: 8px; border-radius: 0 4px 4px 0; }
-    .step-notes p { margin: 0; font-size: 0.9em; }
-    .selector { font-size: 0.85em; color: #666; }
-    code { background: #eee; padding: 2px 4px; border-radius: 4px; font-size: 0.9em; word-break: break-all; }
-    .timestamp { font-size: 0.8em; color: #888; }
-    footer { text-align: center; margin-top: 40px; font-size: 0.8em; color: #aaa; }
-    .screenshot-details { margin-top: 12px; }
-    .screenshot-thumb { cursor: pointer; display: inline-flex; align-items: center; gap: 8px; list-style: none; }
-    .screenshot-thumb::-webkit-details-marker { display: none; }
-    .thumb { width: 160px; height: auto; border: 1px solid #ddd; border-radius: 4px; transition: box-shadow 0.15s; }
-    .thumb:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
-    .thumb-hint { font-size: 0.75em; color: #999; }
-    .screenshot-details[open] .thumb-hint { display: none; }
-    .full { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; margin-top: 8px; display: block; }
-  </style>
+  <style>${BASE_STYLES}</style>
 </head>
 <body>
+<div class="page">
   <h1>${escapeHtml(guideTitle)}</h1>
-  <p>Generated on ${new Date().toLocaleString()} &mdash; ${stepsData.length} steps</p>
+  <p class="muted">Generated on ${new Date().toLocaleString()} &mdash; ${stepsData.length} steps</p>
   ${introHtml}
   ${steps}
   ${conclusionHtml}
   <footer>Generated by Sentinel Extension</footer>
+</div>
 </body>
 </html>`;
 }
@@ -136,15 +499,15 @@ export function generateIssueReportHTML(issues: Issue[]): string {
         : '';
 
       return `
-    <div class="issue" style="background: ${typeBg}; border-color: ${typeBorder};">
-      <div class="issue-header">
-        <span class="badge type-badge">${tLabel}</span>
+    <div class="card" style="background: ${typeBg}; border-color: ${typeBorder}; margin-bottom: 20px;">
+      <div class="issue-header" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <span class="badge badge-bug" style="background:#6366f1;">${tLabel}</span>
         <span class="badge" style="background: ${sColor};">${issue.severity}</span>
-        <h3>${escapeHtml(issue.title)}</h3>
+        <h3 style="margin:0;">${escapeHtml(issue.title)}</h3>
       </div>
       <p class="page-url"><strong>Page:</strong> <code>${escapeHtml(issue.pageUrl)}</code></p>
       ${issue.selector ? `<p><strong>Element:</strong> <code>${escapeHtml(issue.selector)}</code></p>` : ''}
-      ${issue.notes ? `<div class="notes"><strong>Notes:</strong><p>${escapeHtml(issue.notes)}</p></div>` : ''}
+      ${issue.notes ? `<div style="margin:8px 0;padding:8px;background:rgba(255,255,255,0.7);border-radius:4px;"><strong>Notes:</strong><p>${escapeHtml(issue.notes)}</p></div>` : ''}
       ${errorHtml}
       <p class="timestamp">${new Date(issue.createdAt).toLocaleString()}</p>
       ${screenshotHtml}
@@ -156,47 +519,20 @@ export function generateIssueReportHTML(issues: Issue[]): string {
 <html>
 <head>
   <title>Sentinel Issue Report</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 40px 20px; background: #f9f9f9; }
-    h1 { color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-    .summary { display: flex; gap: 16px; margin-bottom: 24px; }
-    .summary-card { flex: 1; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; text-align: center; }
-    .summary-card .num { font-size: 2em; font-weight: bold; }
-    .issue { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-    .issue-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; color: #fff; font-size: 0.75em; font-weight: bold; text-transform: uppercase; }
-    .type-badge { background: #6366f1; }
-    h3 { margin: 0; color: #222; font-size: 1.05em; }
-    code { background: #eee; padding: 2px 4px; border-radius: 4px; font-size: 0.9em; word-break: break-all; }
-    .notes { margin: 8px 0; padding: 8px; background: rgba(255,255,255,0.7); border-radius: 4px; }
-    .notes p { margin: 4px 0 0; }
-    .error-detail { margin: 8px 0; padding: 8px; background: #fff5f5; border: 1px solid #fecaca; border-radius: 4px; font-size: 0.9em; }
-    .error-detail p { margin: 4px 0; }
-    .stack { background: #1e1e1e; color: #d4d4d4; padding: 8px; border-radius: 4px; font-size: 0.8em; overflow-x: auto; white-space: pre-wrap; max-height: 200px; }
-    .page-url { font-size: 0.85em; color: #666; }
-    .timestamp { font-size: 0.8em; color: #888; }
-    footer { text-align: center; margin-top: 40px; font-size: 0.8em; color: #aaa; }
-    .screenshot-details { margin-top: 12px; }
-    .screenshot-thumb { cursor: pointer; display: inline-flex; align-items: center; gap: 8px; list-style: none; }
-    .screenshot-thumb::-webkit-details-marker { display: none; }
-    .thumb { width: 160px; height: auto; border: 1px solid #ddd; border-radius: 4px; transition: box-shadow 0.15s; }
-    .thumb:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
-    .thumb-hint { font-size: 0.75em; color: #999; }
-    .screenshot-details[open] .thumb-hint { display: none; }
-    .full { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; margin-top: 8px; display: block; }
-  </style>
+  <style>${BASE_STYLES}</style>
 </head>
 <body>
+<div class="page">
   <h1>Sentinel Issue Report</h1>
-  <p>Generated on ${new Date().toLocaleString()}</p>
-  <div class="summary">
-    <div class="summary-card"><div class="num" style="color:#dc2626;">${bugs.length}</div>Bugs</div>
-    <div class="summary-card"><div class="num" style="color:#6366f1;">${features.length}</div>Feature Requests</div>
-    <div class="summary-card"><div class="num">${issues.length}</div>Total</div>
+  <p class="muted">Generated on ${new Date().toLocaleString()}</p>
+  <div class="stats">
+    <div class="stat stat-red"><div class="num">${bugs.length}</div><div class="label">Bugs</div></div>
+    <div class="stat stat-purple"><div class="num">${features.length}</div><div class="label">Feature Requests</div></div>
+    <div class="stat stat-blue"><div class="num">${issues.length}</div><div class="label">Total</div></div>
   </div>
   ${cards}
   <footer>Generated by Sentinel Extension</footer>
+</div>
 </body>
 </html>`;
 }

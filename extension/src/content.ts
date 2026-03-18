@@ -3,46 +3,44 @@ import type { Action, Assertion, AssertionResult, Message } from './types';
 // ── Selector Generation ──
 
 function getSelector(el: HTMLElement): string {
+  // Fast-path: globally unique attributes
+  if (el.id) return `#${CSS.escape(el.id)}`;
   const testId = el.getAttribute('data-testid');
   if (testId) return `[data-testid="${testId}"]`;
-
   const ariaLabel = el.getAttribute('aria-label');
   if (ariaLabel) return `[aria-label="${ariaLabel}"]`;
-
-  if ('name' in el && (el as HTMLInputElement).name) {
-    return `${el.tagName.toLowerCase()}[name="${(el as HTMLInputElement).name}"]`;
-  }
-
-  if (el.id) return `#${el.id}`;
+  const name = (el as HTMLInputElement).name;
+  if (name) return `${el.tagName.toLowerCase()}[name="${name}"]`;
   if (el.tagName === 'BODY') return 'body';
 
-  const path: string[] = [];
-  let current: HTMLElement | null = el;
-
-  while (current && current.tagName !== 'HTML') {
-    let selector = current.tagName.toLowerCase();
-    if (current.className && typeof current.className === 'string') {
-      const classes = current.className
-        .split(/\s+/)
-        .filter(c => c && !c.includes(':'));
-      if (classes.length > 0) selector += '.' + classes.join('.');
-    }
-    const siblings = Array.from(current.parentNode?.children || []).filter(
-      s => s.tagName === current?.tagName
-    );
-    if (siblings.length > 1) {
-      const index = siblings.indexOf(current) + 1;
-      selector += `:nth-of-type(${index})`;
-    }
-    path.unshift(selector);
-    current = current.parentElement;
+  // Build a short segment for one DOM node
+  function seg(node: HTMLElement): string {
+    const tag = node.tagName.toLowerCase();
+    if (node.id) return `#${CSS.escape(node.id)}`;
+    const tid = node.getAttribute('data-testid');
+    if (tid) return `[data-testid="${tid}"]`;
+    // Use the first stable class only (no pseudo, no purely numeric)
+    const cls = [...node.classList].find(c => /^[a-zA-Z_-]/.test(c) && !c.includes(':'));
+    const base = cls ? `${tag}.${cls}` : tag;
+    const sibs = Array.from(node.parentNode?.children ?? []).filter(s => s.tagName === node.tagName);
+    return sibs.length > 1 ? `${base}:nth-of-type(${sibs.indexOf(node) + 1})` : base;
   }
 
-  const fullSelector = path.join(' > ');
-  try {
-    if (document.querySelector(fullSelector) === el) return fullSelector;
-  } catch { /* invalid selector, fall through */ }
-  return fullSelector;
+  // Walk up ancestors (max 3 levels), stop as soon as path is unique
+  const path: string[] = [seg(el)];
+  let cur: HTMLElement | null = el.parentElement;
+  while (cur && cur.tagName !== 'BODY' && path.length < 3) {
+    path.unshift(seg(cur));
+    const selector = path.join(' > ');
+    try {
+      const hits = document.querySelectorAll(selector);
+      if (hits.length === 1 && hits[0] === el) return selector;
+    } catch { /* invalid selector */ }
+    // Anchored on an id/data-testid — no need to go further up
+    if (path[0].startsWith('#') || path[0].startsWith('[data-testid')) break;
+    cur = cur.parentElement;
+  }
+  return path.join(' > ');
 }
 
 // ── Human-Readable Descriptions ──
@@ -179,6 +177,8 @@ function isSpecialKeyEvent(e: KeyboardEvent): boolean {
 
 let _feedbackStyle: HTMLStyleElement | null = null;
 let _cursorDot: HTMLElement | null = null;
+// Set true by API_INJECT_ACTION to prevent double-recording via the capture listener
+let _suppressNextRecord = false;
 
 function _ensureFeedbackStyles() {
   if (_feedbackStyle) return;
@@ -256,6 +256,56 @@ function _flashElement(el: HTMLElement) {
   setTimeout(() => el.classList.remove('__s-flash'), 700);
 }
 
+// ── Network & Console Log (page-context interception) ──
+
+interface NetworkEntry {
+  url: string;
+  method: string;
+  status?: number;
+  error?: string;
+  duration: number;
+  timestamp: number;
+}
+
+interface ConsoleEntry {
+  level: 'log' | 'warn' | 'error' | 'info' | 'debug';
+  message: string;
+  timestamp: number;
+}
+
+const _networkLog: NetworkEntry[] = [];
+const _consoleLog: ConsoleEntry[] = [];
+let _pendingNetCount = 0;
+const NET_CONSOLE_MAX = 200;
+
+function _injectInterceptors() {
+  if ((window as Window & { __sentinelInjected?: boolean }).__sentinelInjected) return;
+  (window as Window & { __sentinelInjected?: boolean }).__sentinelInjected = true;
+  const s = document.createElement('script');
+  // Minified interceptor injected into page's JS context via a <script> tag
+  s.textContent = `(function(){if(window.__sentinelInjected)return;window.__sentinelInjected=true;var _oF=window.fetch;window.fetch=function(){var a=arguments,url=typeof a[0]==='string'?a[0]:(a[0]&&a[0].url)||'',method=(a[1]&&a[1].method)||'GET',t=Date.now();window.postMessage({__sentinel:'net_start',url:url,method:method},'*');return _oF.apply(this,a).then(function(r){window.postMessage({__sentinel:'net_end',url:url,method:method,status:r.status,duration:Date.now()-t},'*');return r;}).catch(function(e){window.postMessage({__sentinel:'net_error',url:url,method:method,error:String(e),duration:Date.now()-t},'*');throw e;});};var _OX=window.XMLHttpRequest;function SXhr(){var xhr=new _OX(),_m='GET',_u='',_t=0,_oo=xhr.open.bind(xhr);xhr.open=function(m,u){_m=m;_u=u;return _oo.apply(xhr,arguments);};var _os=xhr.send.bind(xhr);xhr.send=function(){_t=Date.now();window.postMessage({__sentinel:'net_start',url:_u,method:_m},'*');xhr.addEventListener('load',function(){window.postMessage({__sentinel:'net_end',url:_u,method:_m,status:xhr.status,duration:Date.now()-_t},'*');});xhr.addEventListener('error',function(){window.postMessage({__sentinel:'net_error',url:_u,method:_m,error:'Network error',duration:Date.now()-_t},'*');});return _os.apply(xhr,arguments);};return xhr;}SXhr.prototype=_OX.prototype;window.XMLHttpRequest=SXhr;['log','warn','error','info','debug'].forEach(function(lvl){var _o=console[lvl].bind(console);console[lvl]=function(){_o.apply(console,arguments);var msg=Array.prototype.slice.call(arguments).map(function(x){return typeof x==='string'?x:JSON.stringify(x);}).join(' ');window.postMessage({__sentinel:'console',level:lvl,message:msg},'*');};});})();`;
+  (document.head || document.documentElement).appendChild(s);
+  s.remove();
+}
+
+window.addEventListener('message', (e: MessageEvent) => {
+  if (e.source !== window) return;
+  const d = e.data as { __sentinel?: string; url?: string; method?: string; status?: number; error?: string; duration?: number; level?: string; message?: string };
+  if (!d?.__sentinel) return;
+  if (d.__sentinel === 'net_start') {
+    _pendingNetCount++;
+  } else if (d.__sentinel === 'net_end' || d.__sentinel === 'net_error') {
+    _pendingNetCount = Math.max(0, _pendingNetCount - 1);
+    _networkLog.push({ url: d.url!, method: d.method!, status: d.status, error: d.error, duration: d.duration!, timestamp: Date.now() });
+    if (_networkLog.length > NET_CONSOLE_MAX) _networkLog.shift();
+  } else if (d.__sentinel === 'console') {
+    _consoleLog.push({ level: d.level as ConsoleEntry['level'], message: d.message!, timestamp: Date.now() });
+    if (_consoleLog.length > NET_CONSOLE_MAX) _consoleLog.shift();
+  }
+});
+
+_injectInterceptors();
+
 // ── Recording State ──
 
 let scrollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -287,6 +337,7 @@ function emitAction(action: Action) {
 // ── Event Handlers ──
 
 function handleClick(event: Event) {
+  if (_suppressNextRecord) { _suppressNextRecord = false; return; }
   const e = event as MouseEvent;
   const raw = e.target as HTMLElement;
   if (!raw) return;
@@ -327,6 +378,7 @@ function handleDblClick(event: Event) {
 }
 
 function handleInput(event: Event) {
+  if (_suppressNextRecord) return;
   const target = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
   if (!target) return;
 
@@ -897,6 +949,10 @@ chrome.storage.local.get(['isRecording', 'isErrorTracking'], (result) => {
 
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
   switch (message.type) {
+    case 'PING':
+      sendResponse({ alive: true, url: location.href, title: document.title });
+      return true;
+
     case 'START_RECORDING':
       startRecording();
       break;
@@ -953,13 +1009,12 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
         sendResponse({ success: false, error: `Element not found: ${p.selector}` });
         return true;
       }
-      // Show visual feedback — ripple + flash so it appears in the next screenshot
+      // Visual feedback
       const rect = el.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       _showRipple(cx, cy);
       _flashElement(el);
-      // Position cursor dot at the injection point
       if (_cursorDot) {
         _cursorDot.style.left = `${cx}px`;
         _cursorDot.style.top = `${cy}px`;
@@ -972,30 +1027,43 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
         (document.body || document.documentElement).appendChild(_cursorDot);
       }
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Delay execution slightly so the visual is rendered before the screenshot
+      // Suppress recording listener so background handles session + screenshot directly
+      _suppressNextRecord = true;
       setTimeout(() => {
         try {
           if (p.type === 'click') {
             el.click();
           } else if (p.type === 'dblclick') {
+            _suppressNextRecord = false; // dblclick doesn't trigger handleClick
             el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
           } else if (p.type === 'input') {
+            _suppressNextRecord = false; // input suppressed above in handleInput guard
             (el as HTMLInputElement).value = p.value || '';
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
           } else if (p.type === 'keydown') {
+            _suppressNextRecord = false;
             el.dispatchEvent(new KeyboardEvent('keydown', { key: p.value || '', bubbles: true }));
           } else if (p.type === 'submit') {
+            _suppressNextRecord = false;
             if (el instanceof HTMLFormElement) el.requestSubmit();
           } else if (p.type === 'scroll') {
+            _suppressNextRecord = false;
             const [x, y] = (p.value || '0,0').split(',').map(Number);
             window.scrollTo({ left: x, top: y, behavior: 'smooth' });
           }
-          sendResponse({ success: true, description: describeAction(p.type, el, p.value) });
+          sendResponse({
+            success: true,
+            description: describeAction(p.type, el, p.value),
+            type: p.type,
+            selector: p.selector,
+            value: p.value,
+          });
         } catch (err) {
+          _suppressNextRecord = false;
           sendResponse({ success: false, error: String(err) });
         }
-      }, 220);
+      }, 50);
       return true;
     }
 
@@ -1043,6 +1111,234 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
         visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
         rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
       });
+      return true;
+    }
+
+    case 'API_GET_PAGE_SNAPSHOT': {
+      const p = (message.payload || {}) as {
+        role?: string; regionTop?: number; regionBottom?: number; limit?: number;
+      };
+      const filterRole = p.role?.toLowerCase();
+      const regionTop = p.regionTop ?? -Infinity;
+      const regionBottom = p.regionBottom ?? Infinity;
+      const limit = p.limit ?? 40;
+
+      const seen = new Set<Element>();
+      const elements: Array<{
+        selector: string; tag: string; role?: string; text: string;
+        type?: string; value?: string; placeholder?: string;
+        rect: { top: number; left: number; width: number; height: number };
+      }> = [];
+      const candidates = document.querySelectorAll<HTMLElement>(
+        'a,button,input,select,textarea,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="radio"],[role="combobox"],[role="listbox"],[tabindex],[onclick]'
+      );
+      for (const el of candidates) {
+        if (seen.has(el)) continue;
+        seen.add(el);
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        const visible = r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+        if (!visible) continue;
+        // Region filter
+        if (r.top > regionBottom || r.bottom < regionTop) continue;
+        // Role filter
+        const elRole = el.getAttribute('role') || el.tagName.toLowerCase();
+        if (filterRole && !elRole.toLowerCase().includes(filterRole)) continue;
+        const tag = el.tagName.toLowerCase();
+        const inp = el as HTMLInputElement;
+        elements.push({
+          selector: getSelector(el), tag,
+          role: el.getAttribute('role') || undefined,
+          text: (el.textContent || '').trim().slice(0, 60),
+          type: inp.type || undefined,
+          value: (tag === 'input' || tag === 'select' || tag === 'textarea') ? inp.value : undefined,
+          placeholder: inp.placeholder || undefined,
+          rect: { top: Math.round(r.top), left: Math.round(r.left), width: Math.round(r.width), height: Math.round(r.height) },
+        });
+        if (elements.length >= limit) break;
+      }
+      sendResponse({
+        title: document.title,
+        url: location.href,
+        elements,
+        count: elements.length,
+      });
+      return true;
+    }
+
+    case 'API_FIND_ELEMENT': {
+      const p = message.payload as { text?: string; role?: string; tag?: string; limit?: number; includeHidden?: boolean };
+      const searchText = (p.text || '').toLowerCase();
+      const searchRole = p.role?.toLowerCase();
+      const searchTag = p.tag?.toLowerCase();
+      const limit = p.limit ?? 5;
+      const includeHidden = p.includeHidden ?? false;
+      const results: Array<{ selector: string; tag: string; text: string; visible: boolean }> = [];
+      for (const el of document.querySelectorAll<HTMLElement>('*')) {
+        const elTag = el.tagName.toLowerCase();
+        if (searchTag && elTag !== searchTag) continue;
+        if (searchRole && el.getAttribute('role')?.toLowerCase() !== searchRole) continue;
+        if (searchText) {
+          const elText = (el.textContent || '').trim().toLowerCase();
+          const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+          const ph = ((el as HTMLInputElement).placeholder || '').toLowerCase();
+          if (!elText.includes(searchText) && !ariaLabel.includes(searchText) && !ph.includes(searchText)) continue;
+        }
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        const visible = r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden';
+        if (!visible && !includeHidden) continue;
+        results.push({
+          selector: getSelector(el), tag: elTag,
+          text: (el.textContent || '').trim().slice(0, 60),
+          visible,
+        });
+        if (results.length >= limit) break;
+      }
+      sendResponse({ results });
+      return true;
+    }
+
+    case 'API_GET_TEXT_CONTENT': {
+      const p = message.payload as { selector: string };
+      const el = document.querySelector(p.selector);
+      sendResponse(el ? { exists: true, text: (el.textContent || '').trim() } : { exists: false, text: '' });
+      return true;
+    }
+
+    case 'API_GET_ELEMENT_STATE': {
+      const p = message.payload as { selector: string };
+      const el = document.querySelector(p.selector) as HTMLInputElement | null;
+      if (!el) { sendResponse({ exists: false }); return true; }
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      sendResponse({
+        exists: true, tag: el.tagName.toLowerCase(),
+        value: el.value, checked: el.checked, disabled: el.disabled,
+        readOnly: el.readOnly, visible: r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden',
+        text: (el.textContent || '').trim().slice(0, 200),
+        className: el.className, placeholder: el.placeholder,
+      });
+      return true;
+    }
+
+    case 'API_HOVER': {
+      const p = message.payload as { selector: string };
+      const el = document.querySelector(p.selector) as HTMLElement | null;
+      if (!el) { sendResponse({ success: false, error: `Element not found: ${p.selector}` }); return true; }
+      el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      _flashElement(el);
+      const r = el.getBoundingClientRect();
+      _showRipple(r.left + r.width / 2, r.top + r.height / 2);
+      sendResponse({ success: true });
+      return true;
+    }
+
+    case 'API_SELECT_OPTION': {
+      const p = message.payload as { selector: string; value: string };
+      const el = document.querySelector(p.selector) as HTMLSelectElement | null;
+      if (!el) { sendResponse({ success: false, error: `Element not found: ${p.selector}` }); return true; }
+      el.value = p.value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      _flashElement(el);
+      sendResponse({ success: true, value: el.value });
+      return true;
+    }
+
+    case 'API_KEY_SEQUENCE': {
+      const p = message.payload as { keys: string; selector?: string };
+      const target = (p.selector ? document.querySelector(p.selector) as HTMLElement : null)
+        ?? (document.activeElement as HTMLElement)
+        ?? document.body;
+      const parts = p.keys.split('+');
+      const key = parts[parts.length - 1];
+      const opts: KeyboardEventInit = {
+        key, bubbles: true, cancelable: true,
+        ctrlKey: parts.includes('Ctrl') || parts.includes('Control'),
+        metaKey: parts.includes('Cmd') || parts.includes('Meta'),
+        altKey: parts.includes('Alt'),
+        shiftKey: parts.includes('Shift'),
+      };
+      target.dispatchEvent(new KeyboardEvent('keydown', opts));
+      target.dispatchEvent(new KeyboardEvent('keypress', opts));
+      target.dispatchEvent(new KeyboardEvent('keyup', opts));
+      sendResponse({ success: true });
+      return true;
+    }
+
+    case 'API_DRAG': {
+      const p = message.payload as { source: string; target: string };
+      const src = document.querySelector(p.source) as HTMLElement | null;
+      const dst = document.querySelector(p.target) as HTMLElement | null;
+      if (!src) { sendResponse({ success: false, error: `Source not found: ${p.source}` }); return true; }
+      if (!dst) { sendResponse({ success: false, error: `Target not found: ${p.target}` }); return true; }
+      const sr = src.getBoundingClientRect();
+      const dr = dst.getBoundingClientRect();
+      const dt = new DataTransfer();
+      const mkDrag = (type: string, el: HTMLElement, x: number, y: number) =>
+        el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: x, clientY: y }));
+      const sx = sr.left + sr.width / 2, sy = sr.top + sr.height / 2;
+      const dx = dr.left + dr.width / 2, dy = dr.top + dr.height / 2;
+      mkDrag('dragstart', src, sx, sy);
+      mkDrag('dragover', dst, dx, dy);
+      mkDrag('drop', dst, dx, dy);
+      mkDrag('dragend', src, sx, sy);
+      _showRipple(sx, sy);
+      _showRipple(dx, dy);
+      sendResponse({ success: true });
+      return true;
+    }
+
+    case 'API_WAIT_FOR_TEXT': {
+      const p = message.payload as { text: string; selector?: string; timeout?: number };
+      const timeout = p.timeout || 10000;
+      const checkFn = () => {
+        const root = p.selector ? document.querySelector(p.selector) : document.body;
+        return root && (root.textContent || '').includes(p.text);
+      };
+      if (checkFn()) { sendResponse({ found: true }); return true; }
+      let resolved = false;
+      const obs = new MutationObserver(() => {
+        if (!resolved && checkFn()) {
+          resolved = true; obs.disconnect(); sendResponse({ found: true });
+        }
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+      setTimeout(() => { if (!resolved) { resolved = true; obs.disconnect(); sendResponse({ found: false }); } }, timeout);
+      return true;
+    }
+
+    case 'API_GET_NETWORK_LOG': {
+      sendResponse({ entries: _networkLog.slice() });
+      return true;
+    }
+
+    case 'API_WAIT_FOR_NETWORK_IDLE': {
+      const p = message.payload as { duration?: number; timeout?: number };
+      const quietMs = p.duration || 500;
+      const maxWait = p.timeout || 15000;
+      const start = Date.now();
+      const check = () => {
+        if (Date.now() - start > maxWait) {
+          sendResponse({ idle: false, timedOut: true, pendingCount: _pendingNetCount }); return;
+        }
+        if (_pendingNetCount === 0) {
+          setTimeout(() => {
+            if (_pendingNetCount === 0) sendResponse({ idle: true });
+            else check();
+          }, quietMs);
+        } else {
+          setTimeout(check, 100);
+        }
+      };
+      check();
+      return true;
+    }
+
+    case 'API_GET_CONSOLE_LOG': {
+      sendResponse({ entries: _consoleLog.slice() });
       return true;
     }
   }

@@ -303,40 +303,141 @@ function Field({ label, value, onChange, placeholder, mono = false }: {
   );
 }
 
-function ProjectSetting() {
-  const [name, setName]     = useState('');
-  const [path, setPath]     = useState('');
-  const [devUrl, setDevUrl] = useState('');
-  const [saved, setSaved]   = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [installResult, setInstallResult] = useState<{ ok: boolean; msg: string } | null>(null);
+// ── Project types ──
+
+interface Project {
+  id: string;
+  name: string;
+  path: string;
+  devUrl: string;
+}
+
+function generateProjectId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function useProjects() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   useEffect(() => {
-    chrome.storage.local.get(['projectName', 'projectPath', 'projectDevUrl'], (r) => {
-      if (r.projectName)   setName(r.projectName as string);
-      if (r.projectPath)   setPath(r.projectPath as string);
-      if (r.projectDevUrl) setDevUrl(r.projectDevUrl as string);
+    chrome.storage.local.get(['sentinel_projects', 'sentinel_active_project'], (r) => {
+      const stored = (r.sentinel_projects as Project[]) || [];
+      // Migrate legacy single-project fields if no projects saved yet
+      if (stored.length === 0) {
+        chrome.storage.local.get(['projectName', 'projectPath', 'projectDevUrl'], (legacy) => {
+          if (legacy.projectName || legacy.projectPath || legacy.projectDevUrl) {
+            const migrated: Project = {
+              id: generateProjectId(),
+              name: (legacy.projectName as string) || 'My Project',
+              path: (legacy.projectPath as string) || '',
+              devUrl: (legacy.projectDevUrl as string) || '',
+            };
+            const list = [migrated];
+            chrome.storage.local.set({ sentinel_projects: list, sentinel_active_project: migrated.id });
+            setProjects(list);
+            setActiveId(migrated.id);
+          }
+        });
+      } else {
+        setProjects(stored);
+        setActiveId((r.sentinel_active_project as string) || stored[0]?.id || null);
+      }
     });
   }, []);
 
-  const save = () => {
+  const persist = (list: Project[], aid: string | null) => {
+    const active = list.find(p => p.id === aid) || list[0] || null;
     chrome.storage.local.set({
-      projectName:   name.trim()   || null,
-      projectPath:   path.trim()   || null,
-      projectDevUrl: devUrl.trim() || null,
+      sentinel_projects: list,
+      sentinel_active_project: active?.id || null,
+      // Keep legacy keys in sync so sentinel_status() still works
+      projectName:   active?.name   || null,
+      projectPath:   active?.path   || null,
+      projectDevUrl: active?.devUrl || null,
     });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setProjects(list);
+    setActiveId(active?.id || null);
   };
 
-  const installLocal = async () => {
-    if (!path.trim()) return;
+  const select = (id: string) => {
+    const active = projects.find(p => p.id === id) || null;
+    chrome.storage.local.set({
+      sentinel_active_project: id,
+      projectName:   active?.name   || null,
+      projectPath:   active?.path   || null,
+      projectDevUrl: active?.devUrl || null,
+    });
+    setActiveId(id);
+  };
+
+  const save = (project: Project) => {
+    const idx = projects.findIndex(p => p.id === project.id);
+    const next = idx >= 0
+      ? projects.map(p => p.id === project.id ? project : p)
+      : [...projects, project];
+    persist(next, activeId);
+  };
+
+  const remove = (id: string) => {
+    const next = projects.filter(p => p.id !== id);
+    const nextActive = id === activeId ? (next[0]?.id || null) : activeId;
+    persist(next, nextActive);
+  };
+
+  const add = () => {
+    const project: Project = { id: generateProjectId(), name: 'New Project', path: '', devUrl: '' };
+    const next = [...projects, project];
+    persist(next, project.id);
+    return project;
+  };
+
+  return { projects, activeId, select, save, remove, add };
+}
+
+function ProjectSetting() {
+  const { projects, activeId, select, save, remove, add } = useProjects();
+  const [editId, setEditId]   = useState<string | null>(null);
+  const [name, setName]       = useState('');
+  const [path, setPath]       = useState('');
+  const [devUrl, setDevUrl]   = useState('');
+  const [installing, setInstalling] = useState(false);
+  const [installResult, setInstallResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const activeProject = projects.find(p => p.id === activeId) || null;
+
+  const startEdit = (p: Project) => {
+    setEditId(p.id);
+    setName(p.name);
+    setPath(p.path);
+    setDevUrl(p.devUrl);
+  };
+
+  const commitEdit = () => {
+    if (!editId) return;
+    save({ id: editId, name: name.trim() || 'Unnamed', path: path.trim(), devUrl: devUrl.trim() });
+    setEditId(null);
+  };
+
+  const handleAdd = () => {
+    const p = add();
+    startEdit(p);
+  };
+
+  const handleRemove = (id: string) => {
+    if (editId === id) setEditId(null);
+    remove(id);
+  };
+
+  const mcpAction = async (msgType: 'INSTALL_LOCAL_MCP' | 'REMOVE_LOCAL_MCP') => {
+    const p = editId ? projects.find(x => x.id === editId) : activeProject;
+    if (!p?.path.trim()) return;
     setInstalling(true);
     setInstallResult(null);
     try {
-      const res = await chrome.runtime.sendMessage({ type: 'INSTALL_LOCAL_MCP', payload: { projectPath: path.trim() } });
+      const res = await chrome.runtime.sendMessage({ type: msgType, payload: { projectPath: p.path.trim() } });
       setInstallResult(res?.success
-        ? { ok: true,  msg: `.mcp.json written to project folder` }
+        ? { ok: true,  msg: msgType === 'INSTALL_LOCAL_MCP' ? '.mcp.json updated' : 'Sentinel removed from .mcp.json' }
         : { ok: false, msg: res?.error || 'Failed' });
     } finally {
       setInstalling(false);
@@ -344,34 +445,103 @@ function ProjectSetting() {
     }
   };
 
+  const editingProject = editId ? projects.find(p => p.id === editId) : null;
+
   return (
     <div className="space-y-2">
-      <Field label="Project Name"      value={name}   onChange={setName}   placeholder="My Web App" />
-      <Field label="Source Folder"     value={path}   onChange={setPath}   placeholder="C:/projects/my-app" mono />
-      <Field label="Dev Server URL"    value={devUrl} onChange={setDevUrl} placeholder="http://localhost:3000" mono />
-      <div className="flex items-center gap-2 pt-1">
+      {/* Project list */}
+      <div className="space-y-1">
+        {projects.map(p => (
+          <div
+            key={p.id}
+            className={`flex items-center gap-1.5 px-2 py-1.5 rounded border cursor-pointer transition-colors ${
+              p.id === activeId
+                ? 'border-cyan-400 bg-cyan-50'
+                : 'border-gray-200 hover:border-gray-300 bg-white'
+            }`}
+            onClick={() => { if (editId !== p.id) select(p.id); }}
+          >
+            {/* Active indicator */}
+            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${p.id === activeId ? 'bg-cyan-500' : 'bg-gray-300'}`} />
+            <span className="text-[11px] font-medium text-gray-700 flex-1 truncate">{p.name || 'Unnamed'}</span>
+            {p.devUrl && (
+              <span className="text-[9px] text-gray-400 font-mono truncate max-w-[80px]">{p.devUrl.replace(/^https?:\/\//, '')}</span>
+            )}
+            <button
+              onClick={e => { e.stopPropagation(); startEdit(p); }}
+              className="p-0.5 text-gray-400 hover:text-cyan-600 transition-colors flex-shrink-0"
+              title="Edit"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); handleRemove(p.id); }}
+              className="p-0.5 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+              title="Delete project"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
+              </svg>
+            </button>
+          </div>
+        ))}
         <button
-          onClick={save}
-          className="px-2 py-1 text-[10px] font-semibold text-cyan-600 hover:text-cyan-700 border border-gray-200 rounded transition-colors"
+          onClick={handleAdd}
+          className="w-full px-2 py-1 text-[10px] text-gray-500 hover:text-cyan-600 border border-dashed border-gray-300 hover:border-cyan-400 rounded transition-colors"
         >
-          {saved ? 'Saved!' : 'Save'}
-        </button>
-        <button
-          onClick={installLocal}
-          disabled={!path.trim() || installing}
-          className="px-2 py-1 text-[10px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-300 rounded transition-colors"
-          title="Write .mcp.json to the project folder"
-        >
-          {installing ? 'Installing…' : 'Install MCP locally'}
+          + Add project
         </button>
       </div>
-      {installResult && (
-        <p className={`text-[10px] ${installResult.ok ? 'text-green-600' : 'text-red-500'}`}>
-          {installResult.msg}
-        </p>
+
+      {/* Edit form */}
+      {editingProject && (
+        <div className="border border-cyan-200 rounded p-2 space-y-2 bg-cyan-50/40">
+          <Field label="Project Name"   value={name}   onChange={setName}   placeholder="My Web App" />
+          <Field label="Source Folder"  value={path}   onChange={setPath}   placeholder="C:/projects/my-app" mono />
+          <Field label="Dev Server URL" value={devUrl} onChange={setDevUrl} placeholder="http://localhost:3000" mono />
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={commitEdit}
+              className="px-2 py-1 text-[10px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 rounded transition-colors"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => setEditId(null)}
+              className="px-2 py-1 text-[10px] text-gray-500 hover:text-gray-700 border border-gray-200 rounded transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => mcpAction('INSTALL_LOCAL_MCP')}
+              disabled={!path.trim() || installing}
+              className="px-2 py-1 text-[10px] font-semibold text-white bg-gray-600 hover:bg-gray-700 disabled:bg-gray-300 rounded transition-colors"
+              title="Write .mcp.json to the project folder"
+            >
+              {installing ? 'Working…' : 'Install MCP'}
+            </button>
+            <button
+              onClick={() => mcpAction('REMOVE_LOCAL_MCP')}
+              disabled={!path.trim() || installing}
+              className="px-2 py-1 text-[10px] font-semibold text-red-600 hover:text-red-700 border border-gray-200 hover:border-red-300 disabled:opacity-40 rounded transition-colors"
+              title="Remove sentinel from .mcp.json"
+            >
+              Remove MCP
+            </button>
+          </div>
+          {installResult && (
+            <p className={`text-[10px] ${installResult.ok ? 'text-green-600' : 'text-red-500'}`}>
+              {installResult.msg}
+            </p>
+          )}
+        </div>
       )}
+
       <p className="text-[10px] text-gray-400 leading-relaxed">
-        Project context is returned by <code className="bg-gray-100 px-0.5 rounded">sentinel_status()</code> so the AI knows your codebase path and dev URL without being told each time.
+        The active project is returned by <code className="bg-gray-100 px-0.5 rounded">sentinel_status()</code> so the AI knows your codebase path and dev URL.
       </p>
     </div>
   );

@@ -48,14 +48,23 @@ function App() {
   const [assertions, setAssertions] = useState<Assertion[]>([]);
   const [feedTab, setFeedTab] = useState<FeedTab>('steps');
   const [aiLogCount, setAiLogCount] = useState(0);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [contentScriptReady, setContentScriptReady] = useState(false);
+  const [activeTabUrl, setActiveTabUrl] = useState<string | null>(null);
 
-  // Track AI log entry count for the tab badge
+  // Track AI log count, WS state, and content script attachment reactively
   useEffect(() => {
-    chrome.storage.local.get('aiActivityLog', (r) => {
+    chrome.storage.local.get(['aiActivityLog', 'wsConnected', 'contentScriptReady', 'activeTabUrl'], (r) => {
       setAiLogCount(((r.aiActivityLog as AiLogEntry[]) || []).length);
+      setWsConnected((r.wsConnected as boolean) ?? false);
+      setContentScriptReady((r.contentScriptReady as boolean) ?? false);
+      setActiveTabUrl((r.activeTabUrl as string) ?? null);
     });
     const handler = (changes: { [k: string]: chrome.storage.StorageChange }) => {
       if (changes.aiActivityLog) setAiLogCount(((changes.aiActivityLog.newValue as AiLogEntry[]) || []).length);
+      if (changes.wsConnected) setWsConnected((changes.wsConnected.newValue as boolean) ?? false);
+      if (changes.contentScriptReady) setContentScriptReady((changes.contentScriptReady.newValue as boolean) ?? false);
+      if (changes.activeTabUrl) setActiveTabUrl((changes.activeTabUrl.newValue as string) ?? null);
     };
     chrome.storage.onChanged.addListener(handler);
     return () => chrome.storage.onChanged.removeListener(handler);
@@ -89,6 +98,9 @@ function App() {
         errorCount={capturedErrors.length}
         stepCount={currentSession.length}
         onToggleVideo={video.toggleRecording}
+        wsConnected={wsConnected}
+        contentScriptReady={contentScriptReady}
+        activeTabUrl={activeTabUrl}
       />
 
       {isPlaying && (

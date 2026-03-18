@@ -147,6 +147,19 @@ async def _send_command(command: str, payload: dict | None = None, timeout: floa
 # ── Navigation & Status Tools ──
 
 @mcp.tool()
+async def sentinel_attach() -> dict[str, Any]:
+    """Attach Sentinel to the currently active browser tab without reloading the page.
+
+    Use this instead of sentinel_navigate when the page is already open and you want
+    to start recording, inspecting, or interacting with it in place.
+
+    Returns: attached (bool), url, title of the active tab.
+    If the tab is already attached (content script running), this is a no-op and returns immediately.
+    """
+    return await _send_command("API_ATTACH")
+
+
+@mcp.tool()
 async def sentinel_navigate(url: str) -> dict[str, Any]:
     """Navigate the active browser tab to a URL and wait for it to load.
 
@@ -158,7 +171,11 @@ async def sentinel_navigate(url: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def sentinel_screenshot() -> dict[str, Any]:
-    """Capture a screenshot of the current browser tab. Returns a base64-encoded JPEG data URL."""
+    """Capture a screenshot of the current browser tab. Returns a base64-encoded JPEG (max 800px wide, ~20-25K chars).
+
+    Use this for quick visual checks in-context. If you need to save the image to disk,
+    reference it later, or compare before/after states, use sentinel_screenshot_save instead.
+    """
     return await _send_command("API_SCREENSHOT")
 
 
@@ -207,21 +224,152 @@ async def sentinel_inject_action(type: str, selector: str, value: str = "") -> d
 
 
 @mcp.tool()
+async def sentinel_inject_actions(steps: list[dict], screenshot_every: int = 1) -> dict[str, Any]:
+    """Inject multiple actions in one call — faster than calling sentinel_inject_action repeatedly.
+
+    Args:
+        steps: List of action dicts with keys: type (click/input/dblclick/submit/scroll/keydown),
+               selector (CSS), value (optional). Example: [{"type":"click","selector":"#btn"}]
+        screenshot_every: Screenshot frequency for click/submit actions (1=every, 2=every other, 0=none).
+    """
+    results = []
+    sig_idx = 0
+    for step in steps:
+        action_type = step.get("type", "click")
+        selector = step.get("selector", "")
+        value = step.get("value", "")
+        # For non-screenshot actions, temporarily patch the type to skip 400ms settle wait
+        # by sending a lightweight flag (extension checks for this)
+        is_sig = action_type in ("click", "dblclick", "submit")
+        skip_ss = is_sig and screenshot_every > 0 and (sig_idx % screenshot_every != 0)
+        if is_sig:
+            sig_idx += 1
+        try:
+            payload: dict = {"type": action_type, "selector": selector, "value": value}
+            if skip_ss:
+                payload["skipScreenshot"] = True
+            r = await _send_command("API_INJECT_ACTION", payload)
+            results.append({"selector": selector, "type": action_type, "success": True})
+        except Exception as e:
+            results.append({"selector": selector, "type": action_type, "success": False, "error": str(e)})
+        await asyncio.sleep(0.1)
+    return {"steps": len(steps), "results": results}
+
+
+@mcp.tool()
+async def sentinel_edit_guide(
+    title: str = "",
+    intro: str = "",
+    conclusion: str = "",
+    step_edits: list[dict] | None = None,
+    sections: list[dict] | None = None,
+) -> dict[str, Any]:
+    """Pre-configure guide content before exporting. Call this before sentinel_export_guide.
+
+    All parameters are optional — only provided values are applied.
+
+    Args:
+        title: Guide title (e.g. "How to Add a Task")
+        intro: Introduction paragraph shown before step 1
+        conclusion: Closing paragraph shown after the last step
+        step_edits: Per-step overrides — list of {"index": 0, "title": "...", "notes": "...",
+                    "includeScreenshot": true, "included": true}
+        sections: Sections injected between steps:
+                  [{"type": "note|warning|tip|heading|html", "content": "...", "afterStep": -1}]
+                  afterStep: -1 = before all steps, 0 = after step 0, N = after step N.
+    """
+    edits: dict = {}
+    if title: edits["guideTitle"] = title
+    if intro: edits["introText"] = intro
+    if conclusion: edits["conclusionText"] = conclusion
+    if sections: edits["sections"] = sections
+    if step_edits:
+        edits["steps"] = [
+            {
+                "originalIndex": s["index"],
+                "title": s.get("title", ""),
+                "notes": s.get("notes", ""),
+                "includeScreenshot": s.get("includeScreenshot", True),
+                "included": s.get("included", True),
+            }
+            for s in step_edits
+        ]
+    return await _send_command("API_SET_GUIDE_EDITS", {"edits": edits})
+
+
+@mcp.tool()
 async def sentinel_get_session() -> dict[str, Any]:
-    """Get all recorded actions from the current session (without screenshot data)."""
+    """Get all recorded actions from the current session (without screenshot data).
+
+    Returns a flat list of actions with type, selector, value, description, url, and timestamp.
+    Use this to read step content before composing a guide.
+    To also get screenshot data for specific steps, use sentinel_get_session_with_screenshots.
+    """
     return await _send_command("API_GET_SESSION")
 
 
 @mcp.tool()
-async def sentinel_export_guide(title: str = "", intro: str = "", conclusion: str = "") -> dict[str, Any]:
-    """Generate an HTML guide from the current recorded session.
+async def sentinel_analyze_session() -> dict[str, Any]:
+    """Analyze the current session. Call this FIRST before writing a custom guide.
+
+    Returns: totalSteps, stepsWithScreenshots (indices — only use these for {{screenshot:N}}),
+    stepsWithoutScreenshots, actionTypeCounts, uniqueUrls, byPage, hasMultiPageFlow,
+    chapters [{title, pageUrl, stepIndices, suggestedAfterStep}] (multi-page only),
+    durationMs, recommendedTitle, suggestedIntro.
+    """
+    return await _send_command("API_ANALYZE_SESSION")
+
+
+@mcp.tool()
+async def sentinel_get_session_with_screenshots(indices: list[int] | None = None) -> dict[str, Any]:
+    """Get actions with base64 screenshot data. Use stepsWithScreenshots from
+    sentinel_analyze_session to know which indices exist — pass only what you need.
+
+    Args:
+        indices: 0-based step indices to fetch. Omit for all steps.
+    """
+    return await _send_command("API_GET_SESSION_WITH_SCREENSHOTS", {"indices": indices})
+
+
+@mcp.tool()
+async def sentinel_set_step_description(index: int, description: str) -> dict[str, Any]:
+    """Set a human-readable description for a specific recorded step.
+
+    Use this to annotate individual steps before calling sentinel_export_guide or
+    sentinel_export_custom_guide. The description appears as the step title in the
+    exported guide, without needing to build a full GuideEdits JSON payload.
+
+    Args:
+        index: 0-based step index (from sentinel_analyze_session or sentinel_get_session)
+        description: Human-readable label, e.g. "Click the Save button"
+    """
+    return await _send_command("API_SET_STEP_DESCRIPTION", {"index": index, "description": description})
+
+
+@mcp.tool()
+async def sentinel_export_guide(title: str = "", intro: str = "", conclusion: str = "", output_path: str = "") -> dict[str, Any]:
+    """Generate an HTML guide from the current recorded session and save it to a file.
+
+    Returns the path to the saved HTML file. Open it in a browser or tell the user where it is.
+    Do NOT try to save the HTML yourself — the file is written by this tool.
 
     Args:
         title: Optional guide title
         intro: Optional introduction text
         conclusion: Optional conclusion text
+        output_path: Where to save the file. Defaults to a timestamped file in the OS temp directory.
     """
-    return await _send_command("API_GENERATE_GUIDE", {"title": title, "intro": intro, "conclusion": conclusion}, timeout=120.0)
+    import tempfile, time, os
+    result = await _send_command("API_GENERATE_GUIDE", {"title": title, "intro": intro, "conclusion": conclusion}, timeout=120.0)
+    html = result.get("html", "")
+    if not html:
+        return {"success": False, "error": "No HTML returned from extension"}
+    if not output_path:
+        ts = int(time.time())
+        output_path = os.path.join(tempfile.gettempdir(), f"sentinel-guide-{ts}.html")
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return {"path": output_path, "size": len(html)}
 
 
 # ── Investigation Tools ──
@@ -259,14 +407,586 @@ async def sentinel_save_issue(type: str = "bug", title: str = "", notes: str = "
 
 @mcp.tool()
 async def sentinel_get_issues() -> dict[str, Any]:
-    """Get all saved issues (without screenshot data)."""
+    """Get all saved issues (without screenshot data).
+
+    Returns a flat list of issues with all fields except screenshot base64 data.
+    Use this to read titles, notes, pageUrls, and IDs before composing a report.
+    To also get screenshot data for specific issues, use sentinel_get_issues_with_screenshots.
+    """
     return await _send_command("API_GET_ISSUES")
 
 
 @mcp.tool()
-async def sentinel_export_issues() -> dict[str, Any]:
-    """Generate an HTML issue report from all saved issues."""
-    return await _send_command("API_GENERATE_REPORT", timeout=120.0)
+async def sentinel_analyze_issues() -> dict[str, Any]:
+    """Analyze all saved issues. Call this FIRST before writing a report.
+
+    Returns: totalCount, bugCount, featureCount, criticalCount, highCount, mediumCount, lowCount,
+    issuesWithScreenshots (IDs — use as {{screenshot:ID}} placeholders),
+    issuesWithErrors, byPage [{pageUrl, issueIds, criticalCount, highCount}],
+    bySeverity [{severity, issueIds, count}], patterns [{pattern, issueIds, type}],
+    recommendedTitle, executiveSummary.
+    """
+    return await _send_command("API_ANALYZE_ISSUES")
+
+
+@mcp.tool()
+async def sentinel_get_issues_with_screenshots(ids: list[str] | None = None) -> dict[str, Any]:
+    """Get issues with base64 screenshot data. Use issuesWithScreenshots from
+    sentinel_analyze_issues to know which IDs exist — pass only what you need.
+
+    Args:
+        ids: Issue IDs to fetch. Omit for all issues.
+    """
+    return await _send_command("API_GET_ISSUES_WITH_SCREENSHOTS", {"ids": ids})
+
+
+@mcp.tool()
+async def sentinel_update_issue(id: str, title: str = "", notes: str = "", severity: str = "", type: str = "") -> dict[str, Any]:
+    """Update an existing issue. Only provided fields are changed.
+
+    Args:
+        id: Issue ID (from sentinel_get_issues)
+        title: New title
+        notes: New notes
+        severity: low, medium, high, or critical
+        type: New type — bug or feature-request (omit to keep existing)
+    """
+    updates: dict = {}
+    if title: updates["title"] = title
+    if notes: updates["notes"] = notes
+    if severity: updates["severity"] = severity
+    if type: updates["type"] = type
+    if not updates:
+        return {"success": False, "error": "No fields to update provided"}
+    return await _send_command("API_UPDATE_ISSUE", {"id": id, "updates": updates})
+
+
+@mcp.tool()
+async def sentinel_export_issues(output_path: str = "") -> dict[str, Any]:
+    """Generate an HTML issue report from all saved issues and save it to a file.
+
+    Returns the path to the saved HTML file. Do NOT try to save the HTML yourself.
+
+    Args:
+        output_path: Where to save the file. Defaults to a timestamped file in the OS temp directory.
+    """
+    import tempfile, time, os
+    result = await _send_command("API_GENERATE_REPORT", timeout=120.0)
+    html = result.get("html", "")
+    if not html:
+        return {"success": False, "error": "No HTML returned from extension"}
+    if not output_path:
+        ts = int(time.time())
+        output_path = os.path.join(tempfile.gettempdir(), f"sentinel-report-{ts}.html")
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return {"path": output_path, "size": len(html)}
+
+
+# ── Custom Guide / Report Generators ──
+
+_CSS_REFERENCE = """
+AVAILABLE CSS CLASSES (from the Sentinel design system):
+
+LAYOUT
+  .page          — max-width 960px centered wrapper (already applied by shell)
+  .two-col       — 2-column responsive grid
+  .three-col     — 3-column responsive grid
+  .card-grid     — auto-fill card grid (min 260px columns)
+
+HERO BANNER
+  .hero          — full-width gradient banner (blue→purple), white text
+  .hero h1       — large white title inside hero
+  .hero .subtitle — secondary line, 80% opacity
+  .hero .meta    — small dim metadata line
+
+CARDS
+  .card          — white card, rounded, subtle shadow
+  .card-accent             — blue left border
+  .card-accent-green       — green left border
+  .card-accent-red         — red left border
+  .card-accent-yellow      — yellow left border
+  .card-accent-purple      — purple left border
+
+STEPS (use for numbered instructions)
+  .step          — white step card with shadow
+  .step-header   — flex row: step-num + h3
+  .step-num      — blue circle number (add class "done" for green)
+  .step-notes    — blue-left-bordered note box inside a step
+  .substep       — indented sub-action line
+
+CALLOUTS
+  .callout .callout-note    — blue info callout
+  .callout .callout-warning — yellow warning callout
+  .callout .callout-tip     — green tip callout
+  .callout .callout-danger  — red danger callout
+  .callout .callout-success — green success callout
+  Structure: <div class="callout callout-note"><span class="callout-icon">ℹ️</span><div class="callout-body"><strong>Title</strong> Body text</div></div>
+
+KEYBOARD BADGES
+  .kbd           — styled keyboard key, e.g. <kbd class="kbd">Ctrl</kbd>+<kbd class="kbd">S</kbd>
+
+TABLES
+  .table         — full-width styled table (use on <table> element)
+  <table class="table"><thead><tr><th>Col</th></tr></thead><tbody><tr><td>Val</td></tr></tbody></table>
+
+CHECKLISTS
+  .checklist     — styled <ul> with checkmarks
+  .checklist li.pending — gray circle (not done)
+  .checklist li.warn    — yellow ! (warning)
+
+STATS ROW
+  .stats         — flex row of stat cards
+  .stat          — individual stat card
+  .stat .num     — big number
+  .stat .label   — small label beneath
+  Color modifiers: .stat-red .stat-orange .stat-yellow .stat-green .stat-blue .stat-purple
+
+BADGES
+  .badge .badge-critical   — red
+  .badge .badge-high       — orange
+  .badge .badge-medium     — yellow
+  .badge .badge-low        — green
+  .badge .badge-bug        — indigo
+  .badge .badge-feature    — cyan
+  .badge .badge-blue       — blue
+  .badge .badge-gray       — gray
+
+TIMELINE
+  .timeline      — vertical timeline container
+  .timeline-item — single event
+  .timeline-item .tl-time  — small timestamp
+  .timeline-item .tl-title — bold event name
+  .timeline-item .tl-body  — description
+
+TYPOGRAPHY / MISC
+  h1 h2 h3 p a code pre  — styled by default
+  .muted         — gray small text
+  .bold          — font-weight 700
+  .center        — text-align center
+  .divider       — <hr class="divider"> horizontal rule
+  .mt-8 .mt-16 .mb-8 .mb-16  — spacing utilities
+  .intro .conclusion — padded info boxes
+
+GUIDE-SPECIFIC (use these in guides)
+  .chapter-heading    — blue left-bar chapter heading for multi-page guides
+                        Use: <h2 class="chapter-heading">Dashboard</h2>
+                        Distinct from h2 (bottom border only) and .section-divider (centered rule)
+  .step-count-strip   — small right-aligned "Step N of M" counter inside .step
+                        Use: <p class="step-count-strip">Step 3 of 12</p> (for guides with 8+ steps)
+  .step-skipped       — dashed-border placeholder for intentionally omitted steps
+                        Use: <div class="step-skipped">Step omitted</div>
+
+ISSUE REPORT CARDS (use these in reports instead of generic .card)
+  .issue-card             — base issue card (white, rounded, subtle shadow)
+  .issue-card-critical    — red left border + light red background
+  .issue-card-high        — orange left border + light orange background
+  .issue-card-medium      — yellow left border + light yellow background
+  .issue-card-low         — green left border + light green background
+  .issue-card-header      — flex row: badges + h3 title
+  .issue-card-meta        — small gray metadata line (page URL, element selector)
+  .issue-card-notes       — semi-transparent notes block inside a card
+
+SECTION DIVIDERS (use between severity groups)
+  .section-divider        — labeled horizontal rule with centered text
+  Structure: <div class="section-divider"><span>Critical Issues</span></div>
+
+PAGE IMPACT TABLE (use in "Affected Pages" section)
+  .page-impact-row        — apply to <tr> in affected-pages table
+  .page-impact-badge      — count badge inside table cell (gray by default)
+  .page-impact-badge.critical — red badge
+  .page-impact-badge.high     — orange badge
+
+SCREENSHOTS
+  Use placeholder {{screenshot:N}} where N is the 0-based step index.
+  For issue reports use {{screenshot:ISSUE_ID}} where ISSUE_ID is the issue's id field.
+  Placeholders are replaced with expandable thumbnail+full-size image widgets automatically.
+"""
+
+
+@mcp.tool()
+async def sentinel_design_system() -> dict[str, Any]:
+    """Return the Sentinel CSS design system reference — all available class names and usage.
+
+    Call this before sentinel_export_custom_guide or sentinel_export_custom_report when
+    you need to know which CSS classes are available. Loaded on demand, not at startup.
+    """
+    return {"reference": _CSS_REFERENCE}
+
+
+@mcp.tool()
+async def sentinel_export_custom_guide(body: str, title: str = "Sentinel Guide", output_path: str = "") -> dict[str, Any]:
+    """Generate a custom HTML guide. Write the body HTML — CSS is injected automatically.
+    Body is wrapped in <div class="page">...</div>. No html/head/body/style tags needed.
+    Call sentinel_design_system() for available CSS classes.
+
+    WORKFLOW: sentinel_analyze_session → sentinel_get_session →
+    [sentinel_get_session_with_screenshots(indices)] → [sentinel_set_step_description] →
+    sentinel_export_custom_guide(body, title=analysis.recommendedTitle)
+
+    STRUCTURE:
+      .hero (title + suggestedIntro as .subtitle + date as .meta)
+      [hasMultiPageFlow: <h2 class="chapter-heading"> before each page's first step]
+      Per step: <div class="step"><div class="step-header"><span class="step-num">N</span>
+        <h3>desc</h3></div>[step-notes][callout]
+        [{{screenshot:N}} — only if N in stepsWithScreenshots]</div>
+      [<div class="conclusion">...</div>]
+
+    SCREENSHOT PLACEHOLDERS: {{screenshot:N}} — only valid for N in stepsWithScreenshots.
+
+    Args:
+        body: Full HTML body markup
+        title: Page title (use analysis.recommendedTitle)
+        output_path: Where to save (defaults to temp dir)
+    """
+    import tempfile, time, os
+    result = await _send_command("API_GENERATE_CUSTOM_GUIDE", {"body": body, "title": title}, timeout=30.0)
+    html = result.get("html", "")
+    if not html:
+        return {"success": False, "error": result.get("error", "No HTML returned")}
+    if not output_path:
+        ts = int(time.time())
+        output_path = os.path.join(tempfile.gettempdir(), f"sentinel-guide-{ts}.html")
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return {"path": output_path, "size": len(html)}
+
+
+@mcp.tool()
+async def sentinel_export_custom_report(body: str, title: str = "Sentinel Issue Report", output_path: str = "") -> dict[str, Any]:
+    """Generate a custom HTML issue report. Write the body HTML — CSS is injected automatically.
+    Body is wrapped in <div class="page">...</div>. No html/head/body/style tags needed.
+    Call sentinel_design_system() for available CSS classes.
+
+    WORKFLOW: sentinel_analyze_issues → sentinel_get_issues →
+    [sentinel_get_issues_with_screenshots(ids)] →
+    sentinel_export_custom_report(body, title=analysis.recommendedTitle)
+
+    STRUCTURE:
+      .hero (title + executiveSummary as .subtitle + date as .meta)
+      .stats row (.stat per severity with count > 0, colored .stat-red/.stat-orange/.stat-yellow/.stat-blue)
+      Per severity group (critical→high→medium→low, skip empty):
+        <div class="section-divider"><span>Critical Issues</span></div>
+        Per issue: <div class="issue-card issue-card-{severity}">
+          .issue-card-header: .badge.badge-{severity} + .badge.badge-bug/badge-feature + h3 title
+          .issue-card-meta: page URL | .issue-card-notes: notes
+          [{{screenshot:ISSUE_ID}} — only if ID in issuesWithScreenshots]
+      [patterns → h2 "Patterns" + .callout.callout-warning per pattern]
+      [byPage entries ≥3 → h2 "Affected Pages" + .table with .page-impact-row rows]
+
+    SCREENSHOT PLACEHOLDERS: {{screenshot:ISSUE_ID}} — only valid for IDs in issuesWithScreenshots.
+
+    Args:
+        body: Full HTML body markup
+        title: Page title (use analysis.recommendedTitle)
+        output_path: Where to save (defaults to temp dir)
+    """
+    import tempfile, time, os
+    result = await _send_command("API_GENERATE_CUSTOM_REPORT", {"body": body, "title": title}, timeout=30.0)
+    html = result.get("html", "")
+    if not html:
+        return {"success": False, "error": result.get("error", "No HTML returned")}
+    if not output_path:
+        ts = int(time.time())
+        output_path = os.path.join(tempfile.gettempdir(), f"sentinel-report-{ts}.html")
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return {"path": output_path, "size": len(html)}
+
+
+# ── Extended AI Tools ──
+
+@mcp.tool()
+async def sentinel_get_page_snapshot(
+    role: str = "",
+    region_top: int = -1,
+    region_bottom: int = -1,
+    limit: int = 40,
+) -> dict[str, Any]:
+    """Get a compact map of interactive elements on the current page.
+
+    Returns title, url, and elements with selector, tag, role, text, type, value,
+    placeholder, and bounding rect. Only visible elements are returned.
+    Selectors are the shortest unique path (IDs, data-testid, stable classes preferred).
+
+    Args:
+        role: Filter by ARIA role or tag — e.g. "button", "input", "link", "tab".
+              Returns only elements whose role or tag contains this string.
+        region_top: Only include elements whose top edge is >= this Y pixel value.
+        region_bottom: Only include elements whose top edge is <= this Y pixel value.
+                       Use region_top+region_bottom together to scope to a page section.
+        limit: Max elements to return (default 40; set lower for even more focused results).
+
+    Tip: Use role="button" to list all buttons, or region_top=0,region_bottom=400 for
+    the top portion of the page. Always prefer a filtered call over scanning all 40 elements.
+    """
+    payload: dict[str, Any] = {"limit": limit}
+    if role:
+        payload["role"] = role
+    if region_top >= 0:
+        payload["regionTop"] = region_top
+    if region_bottom >= 0:
+        payload["regionBottom"] = region_bottom
+    return await _send_command("API_GET_PAGE_SNAPSHOT", payload)
+
+
+@mcp.tool()
+async def sentinel_find_element(
+    text: str = "",
+    role: str = "",
+    tag: str = "",
+    limit: int = 5,
+    include_hidden: bool = False,
+) -> dict[str, Any]:
+    """Find elements by visible text content, ARIA role, or tag name.
+
+    Returns only visible elements by default. Selectors are compact (shortest unique path).
+
+    Args:
+        text: Visible text or aria-label to search for (case-insensitive, partial match)
+        role: ARIA role (e.g. "button", "link", "tab", "checkbox")
+        tag: HTML tag name (e.g. "button", "input", "select")
+        limit: Max results to return (default 5; raise only if you need more candidates)
+        include_hidden: Set True to also return hidden/off-screen elements
+    """
+    return await _send_command("API_FIND_ELEMENT", {
+        "text": text, "role": role, "tag": tag,
+        "limit": limit, "includeHidden": include_hidden,
+    })
+
+
+@mcp.tool()
+async def sentinel_get_text_content(selector: str) -> dict[str, Any]:
+    """Read the full text content of an element.
+
+    Args:
+        selector: CSS selector for the target element
+
+    Returns exists (bool) and text (str). Use this to verify page state after an action.
+    """
+    return await _send_command("API_GET_TEXT_CONTENT", {"selector": selector})
+
+
+@mcp.tool()
+async def sentinel_get_element_state(selector: str) -> dict[str, Any]:
+    """Get the full state of a form element or interactive widget.
+
+    Args:
+        selector: CSS selector for the target element
+
+    Returns: exists, tag, value, checked, disabled, readOnly, visible, text, className, placeholder.
+    Use this to read current form values, verify checkbox states, or check if a button is disabled.
+    """
+    return await _send_command("API_GET_ELEMENT_STATE", {"selector": selector})
+
+
+@mcp.tool()
+async def sentinel_hover(selector: str) -> dict[str, Any]:
+    """Trigger mouseover/mouseenter events on an element to reveal hover menus or tooltips.
+
+    Args:
+        selector: CSS selector for the target element
+    """
+    return await _send_command("API_HOVER", {"selector": selector})
+
+
+@mcp.tool()
+async def sentinel_select_option(selector: str, value: str) -> dict[str, Any]:
+    """Set the value of a <select> dropdown element and fire change/input events.
+
+    Args:
+        selector: CSS selector for the <select> element
+        value: The option value to select (the value attribute, not display text)
+    """
+    return await _send_command("API_SELECT_OPTION", {"selector": selector, "value": value})
+
+
+@mcp.tool()
+async def sentinel_key_sequence(keys: str, selector: str = "") -> dict[str, Any]:
+    """Send a keyboard shortcut or key combination to the page or a specific element.
+
+    Args:
+        keys: Key combo string — e.g. "Enter", "Escape", "Tab", "Ctrl+S", "Ctrl+Z", "ArrowDown"
+        selector: CSS selector for the element to focus first (optional; defaults to active element)
+    """
+    return await _send_command("API_KEY_SEQUENCE", {"keys": keys, "selector": selector})
+
+
+@mcp.tool()
+async def sentinel_drag(source: str, target: str) -> dict[str, Any]:
+    """Perform a drag-and-drop from one element to another using native drag events.
+
+    Args:
+        source: CSS selector for the element to drag
+        target: CSS selector for the drop target
+    """
+    return await _send_command("API_DRAG", {"source": source, "target": target})
+
+
+@mcp.tool()
+async def sentinel_wait_for_text(text: str, selector: str = "", timeout: int = 10000) -> dict[str, Any]:
+    """Wait until specific text appears anywhere on the page (or within a specific element).
+
+    Args:
+        text: The text string to wait for (exact substring match)
+        selector: Optional CSS selector to scope the search within
+        timeout: Maximum wait time in milliseconds (default 10000)
+    """
+    return await _send_command("API_WAIT_FOR_TEXT", {"text": text, "selector": selector, "timeout": timeout}, timeout=timeout / 1000 + 5)
+
+
+@mcp.tool()
+async def sentinel_get_network_log() -> dict[str, Any]:
+    """Get all captured network requests (XHR and fetch) since the page loaded.
+
+    Returns a list of entries with: url, method, status, error (if failed), duration (ms), timestamp.
+    Use this to see what API calls a page makes, catch 4xx/5xx errors, and verify request data.
+    Note: Only captures requests made after the Sentinel extension loaded on the page.
+    """
+    return await _send_command("API_GET_NETWORK_LOG")
+
+
+@mcp.tool()
+async def sentinel_wait_for_network_idle(duration: int = 500, timeout: int = 15000) -> dict[str, Any]:
+    """Wait until there are no in-flight network requests for a quiet period.
+
+    Use this after clicking buttons or submitting forms that trigger AJAX requests,
+    before taking a screenshot or reading page state. Much more reliable than fixed sleeps.
+
+    Args:
+        duration: Milliseconds of network silence required (default 500)
+        timeout: Maximum total wait time in milliseconds (default 15000)
+    """
+    return await _send_command("API_WAIT_FOR_NETWORK_IDLE", {"duration": duration, "timeout": timeout}, timeout=timeout / 1000 + 5)
+
+
+@mcp.tool()
+async def sentinel_get_console_log() -> dict[str, Any]:
+    """Get all captured console output (log, warn, error, info, debug) since the page loaded.
+
+    Returns a list of entries with: level, message, timestamp.
+    Useful for reading debug output, checking for runtime errors, and understanding app state.
+    """
+    return await _send_command("API_GET_CONSOLE_LOG")
+
+
+@mcp.tool()
+async def sentinel_save_session(name: str) -> dict[str, Any]:
+    """Save the current session to persistent storage.
+
+    Args:
+        name: Unique name (e.g. "login-flow")
+    """
+    return await _send_command("API_SAVE_SESSION", {"name": name})
+
+
+@mcp.tool()
+async def sentinel_load_session(name: str) -> dict[str, Any]:
+    """Load a saved session as the current active session.
+
+    Args:
+        name: Name of the session to load
+    """
+    return await _send_command("API_LOAD_SESSION", {"name": name})
+
+
+@mcp.tool()
+async def sentinel_list_sessions() -> dict[str, Any]:
+    """List all saved sessions with their names, action counts, and save timestamps."""
+    return await _send_command("API_LIST_SESSIONS")
+
+
+@mcp.tool()
+async def sentinel_run_saved_session(name: str, speed: float = 1.0) -> dict[str, Any]:
+    """Load and replay a previously saved session in the active tab.
+
+    Useful for regression testing — record a workflow once, replay it to verify nothing broke.
+
+    Args:
+        name: Name of the session to replay
+        speed: Playback speed multiplier (default 1.0; use 2.0 for faster replay)
+    """
+    return await _send_command("API_RUN_SAVED_SESSION", {"name": name, "speed": speed})
+
+
+@mcp.tool()
+async def sentinel_screenshot_save(output_path: str = "") -> dict[str, Any]:
+    """Capture a screenshot and save it to a file. Returns the file path.
+
+    Use this (instead of sentinel_screenshot) when you need to reference the screenshot
+    later, compare it, or include it in a report. The file is a JPEG.
+
+    Args:
+        output_path: Where to save. Defaults to a timestamped file in the OS temp directory.
+    """
+    import base64, tempfile, time, os
+    result = await _send_command("API_SCREENSHOT")
+    data = result.get("screenshot", "")
+    if not data:
+        return {"success": False, "error": "No screenshot returned"}
+    if data.startswith("data:"):
+        data = data.split(",", 1)[1]
+    if not output_path:
+        ts = int(time.time())
+        output_path = os.path.join(tempfile.gettempdir(), f"sentinel-screenshot-{ts}.jpg")
+    with open(output_path, "wb") as f:
+        f.write(base64.b64decode(data))
+    return {"path": output_path}
+
+
+@mcp.tool()
+async def sentinel_compare_screenshots(before_path: str, output_path: str = "") -> dict[str, Any]:
+    """Take an 'after' screenshot and compare pixel-by-pixel to a saved 'before' screenshot.
+    Use sentinel_screenshot_save() before an action, then call this after.
+    Returns before_path, after_path, change_pct, diff_path (requires Pillow).
+
+    Args:
+        before_path: Path from a previous sentinel_screenshot_save() call
+        output_path: Where to save the after screenshot (defaults to temp dir)
+    """
+    import base64, tempfile, time, os
+    result = await _send_command("API_SCREENSHOT")
+    data = result.get("screenshot", "")
+    if not data:
+        return {"success": False, "error": "No screenshot returned"}
+    if data.startswith("data:"):
+        data = data.split(",", 1)[1]
+    if not output_path:
+        ts = int(time.time())
+        output_path = os.path.join(tempfile.gettempdir(), f"sentinel-screenshot-{ts}.jpg")
+    after_bytes = base64.b64decode(data)
+    with open(output_path, "wb") as f:
+        f.write(after_bytes)
+
+    # Attempt pixel diff with Pillow
+    diff_path: str | None = None
+    change_pct: float = -1.0
+    try:
+        from PIL import Image, ImageChops  # type: ignore
+        import io
+        img_before = Image.open(before_path).convert("RGB")
+        img_after = Image.open(output_path).convert("RGB")
+        # Resize to match if needed
+        if img_before.size != img_after.size:
+            img_after = img_after.resize(img_before.size)
+        diff = ImageChops.difference(img_before, img_after)
+        pixels = list(diff.getdata())
+        changed = sum(1 for px in pixels if any(c > 10 for c in px))
+        change_pct = round(changed / len(pixels) * 100, 2)
+        # Save diff image (amplified)
+        diff_amplified = diff.point(lambda x: min(255, x * 8))
+        diff_path = os.path.join(tempfile.gettempdir(), f"sentinel-diff-{int(time.time())}.jpg")
+        diff_amplified.save(diff_path)
+    except ImportError:
+        change_pct = -1.0  # Pillow not installed; comparison unavailable
+
+    return {
+        "before_path": before_path,
+        "after_path": output_path,
+        "change_pct": change_pct,
+        "diff_path": diff_path,
+        "note": "change_pct=-1 means Pillow is not installed; install with: pip install Pillow" if change_pct == -1 else None,
+    }
 
 
 # ── DOM Inspection Tools ──
@@ -295,41 +1015,58 @@ async def sentinel_evaluate_selector(selector: str) -> dict[str, Any]:
 # ── Compound Tools ──
 
 @mcp.tool()
-async def sentinel_create_guide(url: str, steps: list[dict[str, str]], title: str = "Guide") -> dict[str, Any]:
-    """One-shot: navigate to a URL, perform a sequence of actions, and export an HTML guide.
+async def sentinel_create_guide(steps: list[dict[str, str]], title: str = "Guide", url: str = "") -> dict[str, Any]:
+    """Perform a sequence of actions on the current (or a new) tab and export an HTML guide.
+
+    If url is omitted the guide is built on whichever tab is currently active — this is the
+    recommended path when the user is already logged in or mid-session, because navigating
+    to a fresh URL will lose auth state and session context.
 
     Args:
-        url: Starting URL to navigate to
-        steps: List of action dicts, each with keys: type, selector, and optionally value.
-               Example: [{"type": "click", "selector": "#login-btn"}, {"type": "input", "selector": "#email", "value": "test@example.com"}]
+        steps: List of action dicts with keys: type, selector, and optionally value.
+               Example: [{"type": "click", "selector": "#login-btn"}, {"type": "input", "selector": "#search", "value": "hello"}]
         title: Guide title
+        url: Optional starting URL. Only provide this when you explicitly want to navigate
+             to a fresh page first. Leave empty to work on the current tab.
     """
-    # Navigate
-    nav = await _send_command("API_NAVIGATE", {"url": url})
+    # Only navigate if a URL was explicitly provided
+    nav = None
+    if url:
+        nav = await _send_command("API_NAVIGATE", {"url": url})
 
     # Start recording
     await _send_command("API_START_RECORDING")
 
-    # Execute each step
+    # Execute each step — always stop recording even if an exception escapes
     results = []
-    for step in steps:
-        try:
-            r = await _send_command("API_INJECT_ACTION", {
-                "type": step.get("type", "click"),
-                "selector": step.get("selector", ""),
-                "value": step.get("value", ""),
-            })
-            results.append(r)
-            await asyncio.sleep(0.5)  # Brief pause between actions
-        except Exception as e:
-            results.append({"success": False, "error": str(e)})
+    try:
+        for step in steps:
+            try:
+                r = await _send_command("API_INJECT_ACTION", {
+                    "type": step.get("type", "click"),
+                    "selector": step.get("selector", ""),
+                    "value": step.get("value", ""),
+                })
+                results.append(r)
+                await asyncio.sleep(0.3)  # Brief pause between actions
+            except Exception as e:
+                results.append({"success": False, "error": str(e)})
+    finally:
+        # Guaranteed stop — recording must not be left running if anything goes wrong
+        await _send_command("API_STOP_RECORDING")
 
-    # Stop recording
-    await _send_command("API_STOP_RECORDING")
-
-    # Export guide
+    # Export guide — write to file so the AI never needs to handle raw HTML
+    import tempfile, time, os
     guide = await _send_command("API_GENERATE_GUIDE", {"title": title})
-    return {"url": nav.get("url", url), "stepResults": results, "html": guide.get("html", "")}
+    html = guide.get("html", "")
+    output_path = ""
+    if html:
+        ts = int(time.time())
+        output_path = os.path.join(tempfile.gettempdir(), f"sentinel-guide-{ts}.html")
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(html)
+    final_url = (nav.get("url") if nav else None) or url or ""
+    return {"url": final_url, "stepResults": results, "path": output_path, "size": len(html)}
 
 
 @mcp.tool()

@@ -117,8 +117,39 @@ def cmd_status() -> dict:
     return {'success': True, 'status': 'running' if pid else 'stopped', 'pid': pid}
 
 
+def cmd_remove_local(payload: dict) -> dict:
+    """Remove only the sentinel entry from .mcp.json in the specified project folder."""
+    project_path = payload.get('project_path', '').strip()
+    if not project_path:
+        return {'success': False, 'error': 'project_path is required'}
+
+    output_path = os.path.join(project_path, '.mcp.json')
+    if not os.path.isfile(output_path):
+        return {'success': True, 'status': 'not_found'}
+
+    try:
+        with open(output_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception as e:
+        return {'success': False, 'error': f'Could not read {output_path}: {e}'}
+
+    servers = config.get('mcpServers', {})
+    if 'sentinel' not in servers:
+        return {'success': True, 'status': 'already_removed'}
+
+    del servers['sentinel']
+    config['mcpServers'] = servers
+
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2)
+        return {'success': True, 'path': output_path}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
 def cmd_install_local(payload: dict) -> dict:
-    """Write .mcp.json to the specified project folder."""
+    """Merge sentinel into .mcp.json in the specified project folder, preserving existing servers."""
     project_path = payload.get('project_path', '').strip()
     if not project_path:
         return {'success': False, 'error': 'project_path is required'}
@@ -126,17 +157,28 @@ def cmd_install_local(payload: dict) -> dict:
         return {'success': False, 'error': f'Directory not found: {project_path}'}
 
     sentinel_script = MCP_SCRIPT.replace('\\', '/')
-    config = {
-        'mcpServers': {
-            'sentinel': {
-                'command': 'python',
-                'args': [sentinel_script],
-            }
-        }
-    }
     output_path = os.path.join(project_path, '.mcp.json')
+
+    # Load existing config if present, preserving all other MCP servers
+    config: dict = {}
+    if os.path.isfile(output_path):
+        try:
+            with open(output_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except Exception:
+            pass  # Corrupt/empty file — start fresh
+
+    if 'mcpServers' not in config or not isinstance(config['mcpServers'], dict):
+        config['mcpServers'] = {}
+
+    # Upsert only the sentinel entry
+    config['mcpServers']['sentinel'] = {
+        'command': 'python',
+        'args': [sentinel_script],
+    }
+
     try:
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2)
         return {'success': True, 'path': output_path}
     except Exception as e:
@@ -238,6 +280,7 @@ def main() -> None:
         'force_restart':  lambda: cmd_force_restart(),
         'uninstall':      lambda: cmd_uninstall(),
         'install_local':  lambda: cmd_install_local(payload),
+        'remove_local':   lambda: cmd_remove_local(payload),
     }
     handler = handlers.get(cmd)
     if handler:

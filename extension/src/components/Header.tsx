@@ -11,6 +11,9 @@ interface HeaderProps {
   errorCount: number;
   stepCount: number;
   onToggleVideo: () => void;
+  wsConnected: boolean;
+  contentScriptReady: boolean;
+  activeTabUrl: string | null;
 }
 
 function openGuideEditor() {
@@ -27,6 +30,7 @@ export default function Header({
   isRecording, isPlaying, isPaused, isErrorTracking,
   isVideoRecording, videoDuration,
   hasActions, errorCount, stepCount, onToggleVideo,
+  wsConnected, contentScriptReady, activeTabUrl,
 }: HeaderProps) {
   const busy = isPlaying;
 
@@ -55,12 +59,64 @@ export default function Header({
       <div className="flex items-center gap-2.5 px-4 py-2.5">
         <img src="icon48.png" alt="Sentinel" className="w-6 h-6" />
         <h1 className="text-sm font-bold tracking-wide flex-1">SENTINEL</h1>
+
+        {/* AI connection indicator */}
+        <div
+          title={wsConnected ? 'Claude is connected and ready' : 'Claude not connected — open an AI session'}
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all ${
+            wsConnected
+              ? 'border-emerald-500/40 bg-emerald-500/10'
+              : 'border-gray-600/40 bg-transparent'
+          }`}
+        >
+          {/* Sparkle / AI icon */}
+          <svg
+            className={`w-3 h-3 ${wsConnected ? 'text-emerald-400' : 'text-gray-600'}`}
+            viewBox="0 0 16 16" fill="currentColor"
+          >
+            <path d="M8 1a.5.5 0 01.5.5v1.586l1.121-1.12a.5.5 0 01.707.707L9.207 3.793 10.793 5.38a.5.5 0 01-.707.707L8.5 4.5v1.086l1.121 1.121a.5.5 0 01-.707.707L8 6.293l-1.414 1.121a.5.5 0 01-.707-.707L7.5 5.586V4.5L5.914 6.087a.5.5 0 01-.707-.707L6.793 3.793 5.672 2.672a.5.5 0 01.707-.707L7.5 3.086V1.5A.5.5 0 018 1zM2.5 8a.5.5 0 000 1h1.086l-1.12 1.121a.5.5 0 00.707.707L4.293 9.707l1.586 1.586a.5.5 0 00.707-.707L5.5 9.5h1.086l1.121 1.121a.5.5 0 00.707-.707L7.293 8.5H8.5v1.086l-1.121 1.121a.5.5 0 00.707.707L9.207 10.293l1.586 1.586a.5.5 0 00.707-.707L10.207 9.5H11.5a.5.5 0 000-1H2.5z"/>
+          </svg>
+          <span className={`text-[10px] font-semibold tracking-wide ${wsConnected ? 'text-emerald-400' : 'text-gray-600'}`}>
+            AI
+          </span>
+          {wsConnected && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          )}
+        </div>
+
         <span className={`inline-block w-2 h-2 rounded-full ${statusColor}`} />
         <span className="text-[11px] text-gray-400 font-medium">{statusLabel}</span>
         {stepCount > 0 && (
           <span className="text-[11px] text-gray-500">{stepCount} steps</span>
         )}
       </div>
+
+      {/* Active tab status bar */}
+      {activeTabUrl && (activeTabUrl.startsWith('http://') || activeTabUrl.startsWith('https://')) && (
+        <div className={`flex items-center gap-1.5 px-4 py-1 text-[10px] border-t transition-colors ${
+          contentScriptReady
+            ? 'border-teal-700/40 bg-teal-900/20 text-teal-400'
+            : 'border-gray-700/40 bg-gray-800/30 text-gray-500'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${contentScriptReady ? 'bg-teal-400' : 'bg-gray-600'}`} />
+          <span className="font-medium flex-shrink-0">{contentScriptReady ? 'Live on active tab' : 'Not attached —'}</span>
+          <span className="truncate opacity-70 min-w-0">
+            {(() => { try { return new URL(activeTabUrl).hostname; } catch { return activeTabUrl; } })()}
+          </span>
+          {!contentScriptReady && (
+            <button
+              onClick={async () => {
+                const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+                if (tab?.id) await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content.js'] });
+                chrome.storage.local.set({ contentScriptReady: true });
+              }}
+              className="ml-auto flex-shrink-0 px-1.5 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white transition-colors"
+            >
+              Attach
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Row 1: main toggles */}
       <div className="flex items-center gap-1 px-3 pb-1">
