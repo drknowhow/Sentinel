@@ -42,17 +42,66 @@ async def _ws_handler(websocket: WebSocketServerProtocol) -> None:
         print("[sentinel-mcp] Extension disconnected")
 
 
+def _port_in_use(port: int) -> bool:
+    """Return True if something is listening on 127.0.0.1:<port>."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.3)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _force_kill_port(port: int) -> None:
+    """Kill whichever process is listening on <port>."""
+    import platform, subprocess
+    try:
+        if platform.system() == "Windows":
+            out = subprocess.run(["netstat", "-ano"], capture_output=True, text=True).stdout
+            for line in out.splitlines():
+                if f"127.0.0.1:{port}" in line and "LISTENING" in line:
+                    pid = line.split()[-1]
+                    subprocess.run(
+                        ["powershell", "-Command", f"Stop-Process -Id {pid} -Force"],
+                        capture_output=True,
+                    )
+                    print(f"[sentinel-mcp] Force-killed PID {pid} holding port {port}")
+                    break
+        else:
+            # macOS / Linux
+            out = subprocess.run(
+                ["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True
+            ).stdout.strip()
+            for pid in out.splitlines():
+                subprocess.run(["kill", "-9", pid], capture_output=True)
+                print(f"[sentinel-mcp] Force-killed PID {pid} holding port {port}")
+    except Exception as e:
+        print(f"[sentinel-mcp] Force-kill failed: {e}")
+
+
 async def _try_shutdown_existing() -> None:
-    """If a --ws-only server is holding port 18925, tell it to exit so we can take over.
-    The extension will reconnect to our new server within a few seconds."""
+    """Release port 18925 so this instance can take over.
+
+    1. Try a graceful SHUTDOWN message (works if the other server is up to date).
+    2. If the port is still held afterwards, force-kill the owning process.
+    The extension reconnects automatically within a few seconds.
+    """
+    if not _port_in_use(18925):
+        return  # nothing to evict
+
+    # Graceful attempt
     try:
         ws = await asyncio.wait_for(websockets.connect("ws://127.0.0.1:18925"), timeout=1.5)
         await ws.send(json.dumps({"command": "SHUTDOWN"}))
         await ws.close()
-        await asyncio.sleep(1.0)  # wait for the port to be released
-        print("[sentinel-mcp] Signalled existing server to stop")
+        await asyncio.sleep(1.0)
+        print("[sentinel-mcp] Sent SHUTDOWN to existing server")
     except Exception:
-        pass  # nothing running — fine
+        pass
+
+    # If still occupied, force-kill
+    if _port_in_use(18925):
+        print("[sentinel-mcp] Port still held — force-killing")
+        _force_kill_port(18925)
+        await asyncio.sleep(0.5)
 
 
 async def _start_ws_server() -> None:
