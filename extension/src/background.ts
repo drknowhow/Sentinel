@@ -617,11 +617,13 @@ onMessage((message: Message, _sender, sendResponse) => {
     case 'STOP_MCP_SERVER':
     case 'MCP_LAUNCHER_STATUS':
     case 'REMOVE_MCP_LAUNCHER':
-    case 'INSTALL_LOCAL_MCP': {
+    case 'INSTALL_LOCAL_MCP':
+    case 'FORCE_RESTART_MCP': {
       const cmd = type === 'LAUNCH_MCP_SERVER'  ? 'start'
                 : type === 'STOP_MCP_SERVER'    ? 'stop'
                 : type === 'REMOVE_MCP_LAUNCHER'? 'uninstall'
                 : type === 'INSTALL_LOCAL_MCP'  ? 'install_local'
+                : type === 'FORCE_RESTART_MCP'  ? 'force_restart'
                 :                                 'status';
       const nativePayload = type === 'INSTALL_LOCAL_MCP'
         ? { command: cmd, payload: { project_path: (payload as Record<string, string>).projectPath } }

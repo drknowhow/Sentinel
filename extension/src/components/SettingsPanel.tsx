@@ -145,7 +145,16 @@ function useMcpLauncher() {
     } finally { setBusy(false); }
   };
 
-  return { status, busy, start, stop, remove, refresh: query };
+  const forceRestart = async () => {
+    setBusy(true);
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'FORCE_RESTART_MCP' });
+      if (res?.notInstalled) persist('not_installed');
+      else if (res?.success) persist('running');
+    } finally { setBusy(false); }
+  };
+
+  return { status, busy, start, stop, remove, forceRestart, refresh: query };
 }
 
 // ── MCP Server Card ──
@@ -574,7 +583,7 @@ function AiToolsSection() {
 
 export default function SettingsPanel() {
   const { status: wsStatus, refresh: refreshWs, reconnect: reconnectWs } = useMcpStatus();
-  const { status: launchStatus, busy, start, stop, remove, refresh: refreshLauncher } = useMcpLauncher();
+  const { status: launchStatus, busy, start, stop, remove, forceRestart, refresh: refreshLauncher } = useMcpLauncher();
   const [extId] = useState(() => chrome.runtime.id);
   const [idCopied, setIdCopied] = useState(false);
 
@@ -678,6 +687,16 @@ export default function SettingsPanel() {
                       </button>
                     </>
                   )
+                )}
+                {launchStatus !== 'not_installed' && launchStatus !== 'unknown' && (
+                  <button
+                    onClick={() => { forceRestart(); setTimeout(() => { refreshWs(); refreshLauncher(); }, 2000); }}
+                    disabled={busy}
+                    className="px-2 py-1 text-[10px] font-semibold text-amber-600 hover:text-amber-700 border border-amber-200 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 rounded transition-colors"
+                    title="Kill any stale server on port 18925 and start fresh"
+                  >
+                    {busy ? '…' : '↺ Restart'}
+                  </button>
                 )}
                 <button
                   onClick={() => { refreshWs(); refreshLauncher(); }}

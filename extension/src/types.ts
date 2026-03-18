@@ -76,6 +76,7 @@ export type MessageType =
   | 'MCP_LAUNCHER_STATUS'
   | 'REMOVE_MCP_LAUNCHER'
   | 'INSTALL_LOCAL_MCP'
+  | 'FORCE_RESTART_MCP'
   // ── API (MCP WebSocket bridge) ──
   | 'API_NAVIGATE'
   | 'API_SCREENSHOT'

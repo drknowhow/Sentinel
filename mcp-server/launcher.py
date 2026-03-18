@@ -143,6 +143,54 @@ def cmd_install_local(payload: dict) -> dict:
         return {'success': False, 'error': str(e)}
 
 
+def _kill_port(port: int) -> list[int]:
+    """Kill any process listening on the given port. Returns list of killed PIDs."""
+    killed = []
+    try:
+        if sys.platform == 'win32':
+            out = subprocess.run(['netstat', '-ano'], capture_output=True, text=True).stdout
+            for line in out.splitlines():
+                if f'127.0.0.1:{port}' in line and 'LISTENING' in line:
+                    pid = int(line.split()[-1])
+                    subprocess.run(
+                        ['powershell', '-Command', f'Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue'],
+                        capture_output=True,
+                    )
+                    killed.append(pid)
+        else:
+            out = subprocess.run(['lsof', '-ti', f'tcp:{port}'], capture_output=True, text=True).stdout
+            for pid_str in out.strip().splitlines():
+                pid = int(pid_str)
+                os.kill(pid, 9)
+                killed.append(pid)
+    except Exception:
+        pass
+    return killed
+
+
+def cmd_force_restart() -> dict:
+    """Kill every process holding port 18925 (including stale --ws-only servers
+    and any competing MCP instances) then start a fresh --ws-only server."""
+    import time
+
+    # Kill the PID-tracked server if any
+    pid = read_pid()
+    if pid:
+        _kill(pid)
+        if os.path.exists(PID_FILE):
+            os.unlink(PID_FILE)
+
+    # Force-kill anything else holding the port
+    killed = _kill_port(18925)
+
+    # Brief pause for the port to release
+    if killed:
+        time.sleep(0.8)
+
+    # Start fresh
+    return cmd_start()
+
+
 def cmd_uninstall() -> dict:
     """Remove the native host registration and generated files."""
     HOST_NAME = 'com.sentinel.launcher'
@@ -184,11 +232,12 @@ def main() -> None:
     cmd = msg.get('command', '')
     payload = msg.get('payload', {})
     handlers = {
-        'start':         lambda: cmd_start(),
-        'stop':          lambda: cmd_stop(),
-        'status':        lambda: cmd_status(),
-        'uninstall':     lambda: cmd_uninstall(),
-        'install_local': lambda: cmd_install_local(payload),
+        'start':          lambda: cmd_start(),
+        'stop':           lambda: cmd_stop(),
+        'status':         lambda: cmd_status(),
+        'force_restart':  lambda: cmd_force_restart(),
+        'uninstall':      lambda: cmd_uninstall(),
+        'install_local':  lambda: cmd_install_local(payload),
     }
     handler = handlers.get(cmd)
     if handler:
