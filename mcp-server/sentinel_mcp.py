@@ -221,7 +221,7 @@ async def sentinel_export_guide(title: str = "", intro: str = "", conclusion: st
         intro: Optional introduction text
         conclusion: Optional conclusion text
     """
-    return await _send_command("API_GENERATE_GUIDE", {"title": title, "intro": intro, "conclusion": conclusion})
+    return await _send_command("API_GENERATE_GUIDE", {"title": title, "intro": intro, "conclusion": conclusion}, timeout=120.0)
 
 
 # ── Investigation Tools ──
@@ -266,7 +266,7 @@ async def sentinel_get_issues() -> dict[str, Any]:
 @mcp.tool()
 async def sentinel_export_issues() -> dict[str, Any]:
     """Generate an HTML issue report from all saved issues."""
-    return await _send_command("API_GENERATE_REPORT")
+    return await _send_command("API_GENERATE_REPORT", timeout=120.0)
 
 
 # ── DOM Inspection Tools ──

@@ -349,7 +349,7 @@ async function getIsRecording(): Promise<boolean> {
 
 async function captureScreenshot(): Promise<string | null> {
   return new Promise((resolve) => {
-    chrome.tabs.captureVisibleTab({ format: 'jpeg', quality: 70 }, (dataUrl) => {
+    chrome.tabs.captureVisibleTab({ format: 'jpeg', quality: 50 }, (dataUrl) => {
       if (chrome.runtime.lastError) {
         console.error('Screenshot failed:', chrome.runtime.lastError.message);
         resolve(null);

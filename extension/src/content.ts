@@ -175,6 +175,87 @@ function isSpecialKeyEvent(e: KeyboardEvent): boolean {
   return SPECIAL_KEYS.has(e.key);
 }
 
+// ── Visual Feedback (cursor dot, click ripple, element flash) ──
+
+let _feedbackStyle: HTMLStyleElement | null = null;
+let _cursorDot: HTMLElement | null = null;
+
+function _ensureFeedbackStyles() {
+  if (_feedbackStyle) return;
+  _feedbackStyle = document.createElement('style');
+  _feedbackStyle.textContent = `
+    .__s-cursor {
+      position: fixed;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: rgba(8,145,178,0.8);
+      border: 2px solid rgba(255,255,255,0.95);
+      box-shadow: 0 0 0 3px rgba(8,145,178,0.3);
+      pointer-events: none;
+      z-index: 2147483646;
+      transform: translate(-50%,-50%);
+    }
+    .__s-ripple {
+      position: fixed;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: rgba(8,145,178,0.65);
+      pointer-events: none;
+      z-index: 2147483645;
+      transform: translate(-50%,-50%);
+      animation: __s-ripple-out 0.55s ease-out forwards;
+    }
+    @keyframes __s-ripple-out {
+      0%   { width: 12px; height: 12px; opacity: 0.75; }
+      100% { width: 60px; height: 60px; opacity: 0; }
+    }
+    .__s-flash {
+      outline: 3px solid #0891b2 !important;
+      outline-offset: 2px !important;
+      box-shadow: 0 0 0 5px rgba(8,145,178,0.18) !important;
+      transition: outline 0.08s, box-shadow 0.08s !important;
+    }
+  `;
+  (document.head || document.documentElement).appendChild(_feedbackStyle);
+}
+
+function _showRipple(x: number, y: number) {
+  _ensureFeedbackStyles();
+  const el = document.createElement('div');
+  el.className = '__s-ripple';
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  (document.body || document.documentElement).appendChild(el);
+  setTimeout(() => el.remove(), 600);
+}
+
+function _onMouseMove(e: MouseEvent) {
+  if (_cursorDot) {
+    _cursorDot.style.left = `${e.clientX}px`;
+    _cursorDot.style.top = `${e.clientY}px`;
+  }
+}
+
+function _startCursorDot() {
+  if (_cursorDot) return;
+  _ensureFeedbackStyles();
+  _cursorDot = document.createElement('div');
+  _cursorDot.className = '__s-cursor';
+  (document.body || document.documentElement).appendChild(_cursorDot);
+  document.addEventListener('mousemove', _onMouseMove, { passive: true });
+}
+
+function _stopCursorDot() {
+  document.removeEventListener('mousemove', _onMouseMove);
+  if (_cursorDot) { _cursorDot.remove(); _cursorDot = null; }
+}
+
+function _flashElement(el: HTMLElement) {
+  _ensureFeedbackStyles();
+  el.classList.add('__s-flash');
+  setTimeout(() => el.classList.remove('__s-flash'), 700);
+}
+
 // ── Recording State ──
 
 let scrollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -206,7 +287,8 @@ function emitAction(action: Action) {
 // ── Event Handlers ──
 
 function handleClick(event: Event) {
-  const raw = event.target as HTMLElement;
+  const e = event as MouseEvent;
+  const raw = e.target as HTMLElement;
   if (!raw) return;
   if (raw === recordingBadge || recordingBadge?.contains(raw)) return;
 
@@ -222,6 +304,7 @@ function handleClick(event: Event) {
   lastClickTime = now;
 
   flushAllPendingInputs();
+  _showRipple(e.clientX, e.clientY);
 
   emitAction({
     type: 'click',
@@ -433,6 +516,7 @@ function startRecording() {
   window.addEventListener('hashchange', handleNavigation);
 
   showRecordingBadge();
+  _startCursorDot();
   console.log('Sentinel: Recording started');
 }
 
@@ -450,6 +534,7 @@ function stopRecording() {
   window.removeEventListener('hashchange', handleNavigation);
 
   hideRecordingBadge();
+  _stopCursorDot();
   console.log('Sentinel: Recording stopped');
 }
 
@@ -868,28 +953,49 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
         sendResponse({ success: false, error: `Element not found: ${p.selector}` });
         return true;
       }
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      try {
-        if (p.type === 'click') {
-          el.click();
-        } else if (p.type === 'dblclick') {
-          el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-        } else if (p.type === 'input') {
-          (el as HTMLInputElement).value = p.value || '';
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        } else if (p.type === 'keydown') {
-          el.dispatchEvent(new KeyboardEvent('keydown', { key: p.value || '', bubbles: true }));
-        } else if (p.type === 'submit') {
-          if (el instanceof HTMLFormElement) el.requestSubmit();
-        } else if (p.type === 'scroll') {
-          const [x, y] = (p.value || '0,0').split(',').map(Number);
-          window.scrollTo({ left: x, top: y, behavior: 'smooth' });
-        }
-        sendResponse({ success: true, description: describeAction(p.type, el, p.value) });
-      } catch (err) {
-        sendResponse({ success: false, error: String(err) });
+      // Show visual feedback — ripple + flash so it appears in the next screenshot
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      _showRipple(cx, cy);
+      _flashElement(el);
+      // Position cursor dot at the injection point
+      if (_cursorDot) {
+        _cursorDot.style.left = `${cx}px`;
+        _cursorDot.style.top = `${cy}px`;
+      } else {
+        _ensureFeedbackStyles();
+        _cursorDot = document.createElement('div');
+        _cursorDot.className = '__s-cursor';
+        _cursorDot.style.left = `${cx}px`;
+        _cursorDot.style.top = `${cy}px`;
+        (document.body || document.documentElement).appendChild(_cursorDot);
       }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Delay execution slightly so the visual is rendered before the screenshot
+      setTimeout(() => {
+        try {
+          if (p.type === 'click') {
+            el.click();
+          } else if (p.type === 'dblclick') {
+            el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+          } else if (p.type === 'input') {
+            (el as HTMLInputElement).value = p.value || '';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          } else if (p.type === 'keydown') {
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: p.value || '', bubbles: true }));
+          } else if (p.type === 'submit') {
+            if (el instanceof HTMLFormElement) el.requestSubmit();
+          } else if (p.type === 'scroll') {
+            const [x, y] = (p.value || '0,0').split(',').map(Number);
+            window.scrollTo({ left: x, top: y, behavior: 'smooth' });
+          }
+          sendResponse({ success: true, description: describeAction(p.type, el, p.value) });
+        } catch (err) {
+          sendResponse({ success: false, error: String(err) });
+        }
+      }, 220);
       return true;
     }
 
