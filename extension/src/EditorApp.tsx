@@ -18,6 +18,14 @@ interface GuideJson {
   }>;
 }
 
+const DEFAULT_EXPORT_OPTIONS = {
+  profile: 'internal' as const,
+  redactSelectors: false,
+  redactValues: false,
+  redactUrls: false,
+  includeDiagnostics: true,
+};
+
 // ── Inject editable script into preview HTML ──
 
 function injectEditableScript(html: string): string {
@@ -403,6 +411,71 @@ function EditorInner({
               rows={1}
               className="w-full border border-gray-200 rounded px-2 py-1 text-xs resize-none focus:ring-1 focus:ring-blue-200 outline-none"
             />
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <label className="text-gray-500">
+                Export profile
+                <select
+                  value={edits.exportOptions?.profile || 'internal'}
+                  onChange={e => setEdits(prev => ({
+                    ...prev,
+                    exportOptions: { ...DEFAULT_EXPORT_OPTIONS, ...(prev.exportOptions || {}), profile: e.target.value as 'internal' | 'client' },
+                  }))}
+                  className="mt-1 w-full border border-gray-200 rounded px-2 py-1 bg-white"
+                >
+                  <option value="internal">Internal</option>
+                  <option value="client">Client</option>
+                </select>
+              </label>
+              <label className="text-gray-500">
+                Diagnostics
+                <select
+                  value={edits.exportOptions?.includeDiagnostics ? 'on' : 'off'}
+                  onChange={e => setEdits(prev => ({
+                    ...prev,
+                    exportOptions: { ...DEFAULT_EXPORT_OPTIONS, ...(prev.exportOptions || {}), includeDiagnostics: e.target.value === 'on' },
+                  }))}
+                  className="mt-1 w-full border border-gray-200 rounded px-2 py-1 bg-white"
+                >
+                  <option value="on">Include</option>
+                  <option value="off">Hide</option>
+                </select>
+              </label>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-500">
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={edits.exportOptions?.redactSelectors || false}
+                  onChange={e => setEdits(prev => ({
+                    ...prev,
+                    exportOptions: { ...DEFAULT_EXPORT_OPTIONS, ...(prev.exportOptions || {}), redactSelectors: e.target.checked },
+                  }))}
+                />
+                Selectors
+              </label>
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={edits.exportOptions?.redactValues || false}
+                  onChange={e => setEdits(prev => ({
+                    ...prev,
+                    exportOptions: { ...DEFAULT_EXPORT_OPTIONS, ...(prev.exportOptions || {}), redactValues: e.target.checked },
+                  }))}
+                />
+                Values
+              </label>
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={edits.exportOptions?.redactUrls || false}
+                  onChange={e => setEdits(prev => ({
+                    ...prev,
+                    exportOptions: { ...DEFAULT_EXPORT_OPTIONS, ...(prev.exportOptions || {}), redactUrls: e.target.checked },
+                  }))}
+                />
+                URLs
+              </label>
+            </div>
           </div>
 
           {/* Steps */}

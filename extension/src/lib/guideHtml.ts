@@ -1,7 +1,24 @@
-import type { Action, GuideEdits, GuideSection, Issue } from '../types';
+import type { Action, AssertionResult, ExportOptions, GuideEdits, GuideSection, Issue, IssueAnalysis, PlaybackRunSummary } from '../types';
 
 export function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+  profile: 'internal',
+  redactSelectors: false,
+  redactValues: false,
+  redactUrls: false,
+  includeDiagnostics: true,
+};
+
+function resolveExportOptions(overrides?: ExportOptions): ExportOptions {
+  return { ...DEFAULT_EXPORT_OPTIONS, ...(overrides || {}) };
+}
+
+function redact(value: string | undefined, enabled: boolean, fallback = '[redacted]'): string {
+  if (!value) return '';
+  return enabled ? fallback : value;
 }
 
 // ── Shared Design System ──
@@ -379,6 +396,7 @@ export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string
   const guideTitle = edits?.guideTitle || 'Sentinel Visual Guide';
   const introText = edits?.introText || '';
   const conclusionText = edits?.conclusionText || '';
+  const exportOptions = resolveExportOptions(edits?.exportOptions);
 
   // Build ordered step list from edits (or fall back to all actions)
   const stepsData = edits
@@ -411,6 +429,9 @@ export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string
   const stepBlocks = stepsData.map(({ action, edit }, index) => {
     const desc = edit.title || action.description || action.type.toUpperCase();
     const showScreenshot = edit.includeScreenshot && action.screenshot;
+    const selectorText = redact(action.selector, exportOptions.redactSelectors);
+    const valueText = redact(action.value, exportOptions.redactValues);
+    const urlText = redact(action.url, exportOptions.redactUrls, '[internal-url]');
     const screenshotHtml = showScreenshot
       ? `<details class="screenshot-details">
           <summary class="screenshot-thumb">
@@ -430,8 +451,12 @@ export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string
         <h3>${escapeHtml(desc)}</h3>
       </div>
       ${notesHtml}
-      <p class="selector"><strong>Selector:</strong> <code>${escapeHtml(action.selector)}</code></p>
-      ${action.value ? `<p><strong>Value:</strong> <code>${escapeHtml(action.value)}</code></p>` : ''}
+      ${selectorText ? `<p class="selector"><strong>Selector:</strong> <code>${escapeHtml(selectorText)}</code></p>` : ''}
+      ${valueText ? `<p><strong>Value:</strong> <code>${escapeHtml(valueText)}</code></p>` : ''}
+      ${urlText && exportOptions.includeDiagnostics ? `<p class="page-url"><strong>URL:</strong> <code>${escapeHtml(urlText)}</code></p>` : ''}
+      ${exportOptions.includeDiagnostics && action.selectorConfidence !== undefined
+        ? `<p class="muted">Selector confidence: ${Math.round(action.selectorConfidence * 100)}%</p>`
+        : ''}
       <p class="timestamp">${new Date(action.timestamp).toLocaleString()}</p>
       ${screenshotHtml}
     </div>${renderSections(index)}`;
@@ -450,8 +475,11 @@ export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string
 </head>
 <body>
 <div class="page">
-  <h1>${escapeHtml(guideTitle)}</h1>
-  <p class="muted">Generated on ${new Date().toLocaleString()} &mdash; ${stepsData.length} steps</p>
+  <div class="hero">
+    <h1>${escapeHtml(guideTitle)}</h1>
+    <p class="subtitle">${escapeHtml(exportOptions.profile === 'client' ? 'Client-safe handoff guide' : 'Internal guide with QA context')}</p>
+    <p class="meta">Generated on ${new Date().toLocaleString()} &middot; ${stepsData.length} steps</p>
+  </div>
   ${introHtml}
   ${steps}
   ${conclusionHtml}
@@ -461,7 +489,7 @@ export function generateGuideHTML(actions: Action[], edits?: GuideEdits): string
 </html>`;
 }
 
-export function generateIssueReportHTML(issues: Issue[]): string {
+export function generateIssueReportHTML(issues: Issue[], analysis?: IssueAnalysis): string {
   const bugs = issues.filter(i => i.type === 'bug');
   const features = issues.filter(i => i.type === 'feature-request');
 
@@ -497,9 +525,12 @@ export function generateIssueReportHTML(issues: Issue[]): string {
             ${issue.capturedError.url ? `<p><strong>URL:</strong> <code>${escapeHtml(issue.capturedError.url)}</code></p>` : ''}
           </div>`
         : '';
+      const correlationHtml = issue.correlatedStepIndices?.length
+        ? `<p class="muted"><strong>Related steps:</strong> ${issue.correlatedStepIndices.map(index => `#${index + 1}`).join(', ')}</p>`
+        : '';
 
       return `
-    <div class="card" style="background: ${typeBg}; border-color: ${typeBorder}; margin-bottom: 20px;">
+    <div class="issue-card issue-card-${issue.severity}" style="background: ${typeBg}; border-color: ${typeBorder}; margin-bottom: 20px;">
       <div class="issue-header" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
         <span class="badge badge-bug" style="background:#6366f1;">${tLabel}</span>
         <span class="badge" style="background: ${sColor};">${issue.severity}</span>
@@ -508,6 +539,7 @@ export function generateIssueReportHTML(issues: Issue[]): string {
       <p class="page-url"><strong>Page:</strong> <code>${escapeHtml(issue.pageUrl)}</code></p>
       ${issue.selector ? `<p><strong>Element:</strong> <code>${escapeHtml(issue.selector)}</code></p>` : ''}
       ${issue.notes ? `<div style="margin:8px 0;padding:8px;background:rgba(255,255,255,0.7);border-radius:4px;"><strong>Notes:</strong><p>${escapeHtml(issue.notes)}</p></div>` : ''}
+      ${correlationHtml}
       ${errorHtml}
       <p class="timestamp">${new Date(issue.createdAt).toLocaleString()}</p>
       ${screenshotHtml}
@@ -515,22 +547,363 @@ export function generateIssueReportHTML(issues: Issue[]): string {
     })
     .join('');
 
+  const clusterHtml = analysis?.clusters?.length
+    ? `
+  <h2>Duplicate Clusters</h2>
+  ${analysis.clusters.map(cluster => `
+    <div class="callout callout-warning">
+      <div class="callout-body">
+        <strong>${escapeHtml(cluster.title)}</strong>
+        <div>${cluster.issueIds.length} related issues &middot; ${escapeHtml(cluster.reason)}</div>
+      </div>
+    </div>
+  `).join('')}`
+    : '';
+
+  const summaryText = analysis?.executiveSummary || `Generated report for ${issues.length} issue${issues.length === 1 ? '' : 's'}.`;
+
   return `<!DOCTYPE html>
 <html>
 <head>
-  <title>Sentinel Issue Report</title>
+  <title>${escapeHtml(analysis?.recommendedTitle || 'Sentinel Issue Report')}</title>
   <style>${BASE_STYLES}</style>
 </head>
 <body>
 <div class="page">
-  <h1>Sentinel Issue Report</h1>
-  <p class="muted">Generated on ${new Date().toLocaleString()}</p>
+  <div class="hero">
+    <h1>${escapeHtml(analysis?.recommendedTitle || 'Sentinel Issue Report')}</h1>
+    <p class="subtitle">${escapeHtml(summaryText)}</p>
+    <p class="meta">Generated on ${new Date().toLocaleString()}</p>
+  </div>
   <div class="stats">
     <div class="stat stat-red"><div class="num">${bugs.length}</div><div class="label">Bugs</div></div>
     <div class="stat stat-purple"><div class="num">${features.length}</div><div class="label">Feature Requests</div></div>
     <div class="stat stat-blue"><div class="num">${issues.length}</div><div class="label">Total</div></div>
+    ${analysis ? `<div class="stat stat-orange"><div class="num">${analysis.duplicateCount}</div><div class="label">Duplicates</div></div>` : ''}
   </div>
+  ${clusterHtml}
   ${cards}
+  <footer>Generated by Sentinel Extension</footer>
+</div>
+</body>
+</html>`;
+}
+
+// ── Block-based Report Renderer ──
+
+export interface ReportContext {
+  issues: Issue[];
+  actions: Action[];
+  testResults: AssertionResult[];
+  testSummary: PlaybackRunSummary | null;
+}
+
+export interface ReportBlock {
+  type: string;
+  [key: string]: unknown;
+}
+
+const STAT_COLORS: Record<string, string> = {
+  red: 'stat-red', orange: 'stat-orange', yellow: 'stat-yellow',
+  green: 'stat-green', blue: 'stat-blue', purple: 'stat-purple',
+};
+
+const SEVERITY_CARD: Record<string, string> = {
+  critical: 'issue-card-critical', high: 'issue-card-high',
+  medium: 'issue-card-medium', low: 'issue-card-low',
+};
+
+function renderIssueCard(issue: Issue): string {
+  const typeLabel = issue.type === 'bug' ? 'Bug' : 'Feature';
+  const typeBadge = issue.type === 'bug' ? 'badge-bug' : 'badge-feature';
+  const screenshotHtml = issue.screenshot
+    ? `<details class="screenshot-details">
+        <summary class="screenshot-thumb">
+          <img src="${issue.screenshot}" alt="Screenshot" class="thumb" loading="lazy">
+          <span class="thumb-hint">Click to enlarge</span>
+        </summary>
+        <img src="${issue.screenshot}" alt="Screenshot full" class="full" loading="lazy">
+      </details>`
+    : '';
+  const errorHtml = issue.capturedError
+    ? `<div class="error-detail">
+        <p><strong>Source:</strong> ${escapeHtml(issue.capturedError.source)}</p>
+        <p><strong>Error:</strong> ${escapeHtml(issue.capturedError.message)}</p>
+        ${issue.capturedError.url ? `<p><strong>URL:</strong> <code>${escapeHtml(issue.capturedError.url)}</code></p>` : ''}
+        ${issue.capturedError.stack ? `<pre class="stack">${escapeHtml(issue.capturedError.stack)}</pre>` : ''}
+      </div>`
+    : '';
+  const correlationHtml = issue.correlatedStepIndices?.length
+    ? `<p class="muted"><strong>Related steps:</strong> ${issue.correlatedStepIndices.map(i => `#${i + 1}`).join(', ')}</p>`
+    : '';
+  return `<div class="issue-card ${SEVERITY_CARD[issue.severity] || ''}">
+    <div class="issue-card-header">
+      <span class="badge ${typeBadge}">${typeLabel}</span>
+      <span class="badge badge-${issue.severity}">${issue.severity}</span>
+      <h3>${escapeHtml(issue.title)}</h3>
+    </div>
+    <p class="issue-card-meta"><strong>Page:</strong> <code>${escapeHtml(issue.pageUrl)}</code></p>
+    ${issue.selector ? `<p class="issue-card-meta"><strong>Element:</strong> <code>${escapeHtml(issue.selector)}</code></p>` : ''}
+    ${issue.notes ? `<div class="issue-card-notes">${escapeHtml(issue.notes)}</div>` : ''}
+    ${correlationHtml}
+    ${errorHtml}
+    <p class="timestamp">${new Date(issue.createdAt).toLocaleString()}</p>
+    ${screenshotHtml}
+  </div>`;
+}
+
+function renderStepCard(action: Action, index: number): string {
+  const desc = action.description || action.type.toUpperCase();
+  const screenshotHtml = action.screenshot
+    ? `<details class="screenshot-details">
+        <summary class="screenshot-thumb">
+          <img src="${action.screenshot}" alt="Step ${index + 1}" class="thumb" loading="lazy">
+          <span class="thumb-hint">Click to enlarge</span>
+        </summary>
+        <img src="${action.screenshot}" alt="Step ${index + 1} full" class="full" loading="lazy">
+      </details>`
+    : '';
+  return `<div class="step">
+    <div class="step-header">
+      <span class="step-num">${index + 1}</span>
+      <h3>${escapeHtml(desc)}</h3>
+    </div>
+    ${action.selector ? `<p class="selector"><strong>Selector:</strong> <code>${escapeHtml(action.selector)}</code></p>` : ''}
+    ${action.value ? `<p><strong>Value:</strong> <code>${escapeHtml(action.value)}</code></p>` : ''}
+    ${action.url ? `<p class="page-url"><strong>URL:</strong> <code>${escapeHtml(action.url)}</code></p>` : ''}
+    ${action.selectorConfidence !== undefined ? `<p class="muted">Confidence: ${Math.round(action.selectorConfidence * 100)}%</p>` : ''}
+    <p class="timestamp">${new Date(action.timestamp).toLocaleString()}</p>
+    ${screenshotHtml}
+  </div>`;
+}
+
+function renderTestResultsBlock(results: AssertionResult[], summary: PlaybackRunSummary | null): string {
+  if (!summary && results.length === 0) return '<p class="muted">No test results available.</p>';
+
+  let html = '';
+
+  if (summary) {
+    const allPassed = summary.failedSteps === 0 && summary.assertionFailCount === 0;
+    const durationSec = summary.completedAt && summary.startedAt
+      ? ((summary.completedAt - summary.startedAt) / 1000).toFixed(1)
+      : null;
+    html += `<div class="stats">
+      <div class="stat ${allPassed ? 'stat-green' : 'stat-red'}">
+        <div class="num">${allPassed ? 'PASS' : 'FAIL'}</div>
+        <div class="label">Overall</div>
+      </div>
+      <div class="stat"><div class="num">${summary.completedSteps}/${summary.totalSteps}</div><div class="label">Steps</div></div>
+      <div class="stat stat-red"><div class="num">${summary.failedSteps}</div><div class="label">Failed</div></div>
+      <div class="stat stat-blue"><div class="num">${Math.round(summary.averageConfidence * 100)}%</div><div class="label">Confidence</div></div>
+      ${summary.recoveredSteps > 0 ? `<div class="stat stat-orange"><div class="num">${summary.recoveredSteps}</div><div class="label">Recovered</div></div>` : ''}
+      ${summary.flaky ? '<div class="stat stat-yellow"><div class="num">!</div><div class="label">Flaky</div></div>' : ''}
+      ${durationSec ? `<div class="stat"><div class="num">${durationSec}s</div><div class="label">Duration</div></div>` : ''}
+    </div>`;
+
+    if (summary.stepMetrics?.some(m => m.warning)) {
+      html += '<h3>Step Warnings</h3>';
+      for (const m of summary.stepMetrics.filter(m => m.warning)) {
+        html += `<div class="callout callout-warning"><span class="callout-icon">⚠️</span><div class="callout-body"><strong>Step ${m.index + 1}</strong> ${escapeHtml(m.warning!)}</div></div>`;
+      }
+    }
+  }
+
+  if (results.length > 0) {
+    html += `<table class="table">
+      <thead><tr><th>Status</th><th>Assertion</th><th>Expected</th><th>Actual</th><th>Attempts</th></tr></thead>
+      <tbody>`;
+    for (const r of results) {
+      const status = r.passed
+        ? '<span class="badge badge-low">PASS</span>'
+        : '<span class="badge badge-critical">FAIL</span>';
+      html += `<tr>
+        <td>${status}</td>
+        <td>${escapeHtml(r.assertion.type)}${r.assertion.selector ? ` <code>${escapeHtml(r.assertion.selector)}</code>` : ''}</td>
+        <td>${r.assertion.expected ? escapeHtml(r.assertion.expected) : '—'}</td>
+        <td>${r.actual ? escapeHtml(r.actual) : r.error ? `<span style="color:#dc2626">${escapeHtml(r.error)}</span>` : '—'}</td>
+        <td>${r.attempts ?? 1}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  }
+
+  return html;
+}
+
+function renderContextBlock(issue: Issue): string {
+  const ctx = issue.context;
+  if (!ctx) return '<p class="muted">No runtime context captured for this issue.</p>';
+
+  let html = '';
+
+  if (ctx.networkLog?.length) {
+    const failed = ctx.networkLog.filter(e => e.error || (e.status && e.status >= 400));
+    const entries = failed.length > 0 ? failed : ctx.networkLog.slice(-10);
+    html += `<h3>Network${failed.length > 0 ? ` (${failed.length} failed)` : ''}</h3>`;
+    html += `<table class="table">
+      <thead><tr><th>Method</th><th>URL</th><th>Status</th><th>Duration</th></tr></thead>
+      <tbody>`;
+    for (const e of entries) {
+      const isFail = e.error || (e.status && e.status >= 400);
+      const style = isFail ? ' style="color:#dc2626;font-weight:600"' : '';
+      html += `<tr>
+        <td><code>${escapeHtml(e.method)}</code></td>
+        <td style="word-break:break-all;max-width:400px"><code>${escapeHtml(e.url)}</code></td>
+        <td${style}>${e.error ? escapeHtml(e.error) : e.status ?? '—'}</td>
+        <td>${e.durationMs !== undefined ? `${e.durationMs}ms` : '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  }
+
+  if (ctx.consoleLog?.length) {
+    const errors = ctx.consoleLog.filter(e => e.level === 'error' || e.level === 'warn');
+    const entries = errors.length > 0 ? errors : ctx.consoleLog.slice(-10);
+    html += `<h3>Console${errors.length > 0 ? ` (${errors.length} errors/warnings)` : ''}</h3>`;
+    html += '<div style="margin:8px 0">';
+    for (const e of entries) {
+      const color = e.level === 'error' ? '#dc2626' : e.level === 'warn' ? '#ca8a04' : '#6b7280';
+      html += `<div style="font-size:0.85em;margin:2px 0"><span class="badge" style="background:${color};font-size:0.7em">${e.level.toUpperCase()}</span> <code>${escapeHtml(e.message.slice(0, 200))}</code></div>`;
+    }
+    html += '</div>';
+  }
+
+  if (ctx.capturedErrors?.length) {
+    html += '<h3>Captured Errors</h3>';
+    for (const err of ctx.capturedErrors) {
+      html += `<div class="error-detail">
+        <p><strong>${escapeHtml(err.source)}</strong>: ${escapeHtml(err.message)}</p>
+        ${err.stack ? `<pre class="stack">${escapeHtml(err.stack.split('\n').slice(0, 5).join('\n'))}</pre>` : ''}
+      </div>`;
+    }
+  }
+
+  return html;
+}
+
+function renderBlock(block: ReportBlock, ctx: ReportContext): string {
+  switch (block.type) {
+    case 'hero': {
+      const title = (block.title as string) || '';
+      const subtitle = (block.subtitle as string) || '';
+      const meta = (block.meta as string) || new Date().toLocaleString();
+      return `<div class="hero">
+        <h1>${escapeHtml(title)}</h1>
+        ${subtitle ? `<p class="subtitle">${escapeHtml(subtitle)}</p>` : ''}
+        <p class="meta">${escapeHtml(meta)}</p>
+      </div>`;
+    }
+
+    case 'stats': {
+      const items = (block.items as Array<{ label: string; value: string | number; color?: string }>) || [];
+      return `<div class="stats">${items.map(item =>
+        `<div class="stat ${STAT_COLORS[item.color || ''] || ''}"><div class="num">${escapeHtml(String(item.value))}</div><div class="label">${escapeHtml(item.label)}</div></div>`
+      ).join('')}</div>`;
+    }
+
+    case 'divider': {
+      const label = (block.label as string) || '';
+      return label
+        ? `<div class="section-divider"><span>${escapeHtml(label)}</span></div>`
+        : '<hr class="divider">';
+    }
+
+    case 'issue_card': {
+      const issueId = block.issue_id as string;
+      const issue = ctx.issues.find(i => i.id === issueId);
+      if (!issue) return `<p class="muted">Issue ${escapeHtml(issueId)} not found.</p>`;
+      return renderIssueCard(issue);
+    }
+
+    case 'step_card': {
+      const stepIndex = block.step_index as number;
+      const action = ctx.actions[stepIndex];
+      if (!action) return `<p class="muted">Step ${stepIndex} not found.</p>`;
+      return renderStepCard(action, stepIndex);
+    }
+
+    case 'test_results':
+      return renderTestResultsBlock(ctx.testResults, ctx.testSummary);
+
+    case 'context': {
+      const ctxIssueId = block.issue_id as string;
+      const ctxIssue = ctx.issues.find(i => i.id === ctxIssueId);
+      if (!ctxIssue) return `<p class="muted">Issue ${escapeHtml(ctxIssueId)} not found.</p>`;
+      return renderContextBlock(ctxIssue);
+    }
+
+    case 'callout': {
+      const rawStyle = (block.style as string) || 'note';
+      const validStyles = ['note', 'warning', 'tip', 'danger', 'success'];
+      const style = validStyles.includes(rawStyle) ? rawStyle : 'note';
+      const title = (block.title as string) || '';
+      const body = (block.body as string) || '';
+      const icons: Record<string, string> = { note: 'ℹ️', warning: '⚠️', tip: '💡', danger: '🚨', success: '✅' };
+      return `<div class="callout callout-${style}">
+        <span class="callout-icon">${icons[style] || 'ℹ️'}</span>
+        <div class="callout-body">${title ? `<strong>${escapeHtml(title)}</strong>` : ''}${escapeHtml(body)}</div>
+      </div>`;
+    }
+
+    case 'table': {
+      const headers = (block.headers as string[]) || [];
+      const rows = (block.rows as string[][]) || [];
+      return `<table class="table">
+        <thead><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(row =>
+          `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`
+        ).join('')}</tbody>
+      </table>`;
+    }
+
+    case 'checklist': {
+      const items = (block.items as Array<{ text: string; status?: string }>) || [];
+      return `<ul class="checklist">${items.map(item => {
+        const cls = item.status === 'pending' ? ' class="pending"' : item.status === 'warn' ? ' class="warn"' : '';
+        return `<li${cls}>${escapeHtml(item.text)}</li>`;
+      }).join('')}</ul>`;
+    }
+
+    case 'timeline': {
+      const events = (block.events as Array<{ time: string; title: string; body?: string }>) || [];
+      return `<div class="timeline">${events.map(e =>
+        `<div class="timeline-item">
+          <div class="tl-time">${escapeHtml(e.time)}</div>
+          <div class="tl-title">${escapeHtml(e.title)}</div>
+          ${e.body ? `<div class="tl-body">${escapeHtml(e.body)}</div>` : ''}
+        </div>`
+      ).join('')}</div>`;
+    }
+
+    case 'heading':
+      return `<h2>${escapeHtml((block.text as string) || '')}</h2>`;
+
+    case 'text':
+      return `<p>${escapeHtml((block.content as string) || '')}</p>`;
+
+    case 'html':
+      return (block.content as string) || '';
+
+    default:
+      return `<!-- unknown block type: ${escapeHtml(block.type)} -->`;
+  }
+}
+
+export function renderBlockReport(
+  title: string,
+  blocks: ReportBlock[],
+  context: ReportContext,
+): string {
+  const body = blocks.map(b => renderBlock(b, context)).join('\n');
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>${escapeHtml(title)}</title>
+  <style>${BASE_STYLES}</style>
+</head>
+<body>
+<div class="page">
+${body}
   <footer>Generated by Sentinel Extension</footer>
 </div>
 </body>

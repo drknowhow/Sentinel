@@ -190,96 +190,44 @@ function McpServerCard({ server, onDelete }: {
 // ── Install Dependencies Panel ──
 
 function InstallPanel() {
-  const [installing, setInstalling] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
-
-  const install = async () => {
-    setInstalling(true);
-    setResult(null);
-    try {
-      // This sends a message to any listening native messaging host or can be triggered manually
-      // For now, show instructions since pip install requires terminal access
-      setResult({
-        ok: true,
-        message: 'Run in terminal: pip install -r mcp-server/requirements.txt',
-      });
-    } finally {
-      setInstalling(false);
-    }
-  };
 
   return (
     <div className="space-y-2">
       <p className="text-[10px] text-gray-500 leading-relaxed">
-        The MCP server requires Python 3.10+ with the <code className="text-[9px] bg-gray-100 px-1 rounded">mcp</code> and <code className="text-[9px] bg-gray-100 px-1 rounded">websockets</code> packages.
+        Sentinel works best when setup is explicit: install Python dependencies, register the native host once if you want Start/Stop controls, then install the project MCP config.
       </p>
+      <div className="rounded border border-gray-200 bg-gray-50 p-2 text-[10px] text-gray-600 space-y-1">
+        <div className="font-semibold text-gray-700">Recommended order</div>
+        <div>1. <code className="bg-white px-1 rounded">pip install -r mcp-server/requirements.txt</code></div>
+        <div>2. <code className="bg-white px-1 rounded">python mcp-server/install_host.py &lt;extension-id&gt;</code></div>
+        <div>3. Use Project &rarr; <strong>Install MCP</strong> to write the project config</div>
+        <div>4. Use MCP Bridge &rarr; <strong>Start</strong></div>
+      </div>
       <button
-        onClick={install}
-        disabled={installing}
-        className="w-full py-1.5 px-3 text-[11px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-300 rounded-md transition-colors"
+        onClick={() => {
+          const command = 'pip install -r mcp-server/requirements.txt';
+          navigator.clipboard.writeText(command).catch(() => {});
+          setResult({ ok: true, message: command });
+        }}
+        className="w-full py-1.5 px-3 text-[11px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 rounded-md transition-colors"
       >
-        {installing ? 'Installing...' : 'Show Install Command'}
+        Copy First Command
       </button>
       {result && (
         <div className={`p-2 rounded text-[10px] font-mono ${result.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
           {result.message}
         </div>
       )}
-      <div className="p-2 bg-gray-50 rounded text-[10px] font-mono text-gray-600 leading-relaxed">
-        <div>$ pip install mcp websockets</div>
-        <div className="mt-1">$ python mcp-server/sentinel_mcp.py</div>
-      </div>
-    </div>
-  );
-}
-
-// ── Add Server Form ──
-
-function AddServerForm({ onAdd }: { onAdd: (name: string, command: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [command, setCommand] = useState('');
-
-  const submit = () => {
-    if (!name.trim() || !command.trim()) return;
-    onAdd(name.trim(), command.trim());
-    setName('');
-    setCommand('');
-    setOpen(false);
-  };
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="w-full py-1.5 text-[11px] font-semibold text-cyan-600 hover:text-cyan-700 border border-dashed border-gray-200 hover:border-cyan-300 rounded-md transition-colors"
-      >
-        + Add MCP Server
-      </button>
-    );
-  }
-
-  return (
-    <div className="space-y-2 p-2 bg-gray-50 rounded-lg">
-      <input
-        value={name}
-        onChange={e => setName(e.target.value)}
-        placeholder="Server name"
-        className="w-full px-2 py-1 text-[11px] border border-gray-200 rounded focus:outline-none focus:border-cyan-400"
-      />
-      <input
-        value={command}
-        onChange={e => setCommand(e.target.value)}
-        placeholder="Command (e.g. python my_server.py)"
-        className="w-full px-2 py-1 text-[11px] font-mono border border-gray-200 rounded focus:outline-none focus:border-cyan-400"
-      />
-      <div className="flex gap-2">
-        <button onClick={submit} className="flex-1 py-1 text-[10px] font-semibold text-white bg-cyan-600 hover:bg-cyan-700 rounded transition-colors">
-          Add
-        </button>
-        <button onClick={() => setOpen(false)} className="flex-1 py-1 text-[10px] font-semibold text-gray-500 hover:text-gray-700 bg-white border border-gray-200 rounded transition-colors">
-          Cancel
-        </button>
+      <div className="grid grid-cols-2 gap-2 text-[10px]">
+        <div className="rounded bg-white border border-gray-200 p-2">
+          <div className="font-semibold text-gray-700">Manual server</div>
+          <div className="mt-1 font-mono text-gray-600">python mcp-server/sentinel_mcp.py</div>
+        </div>
+        <div className="rounded bg-white border border-gray-200 p-2">
+          <div className="font-semibold text-gray-700">Symptoms</div>
+          <div className="mt-1 text-gray-500">Disconnected badge, hanging start, or missing tools usually means one of the four setup steps is incomplete.</div>
+        </div>
       </div>
     </div>
   );
@@ -771,11 +719,6 @@ export default function SettingsPanel() {
     chrome.storage.local.set({ mcpCustomServers: servers });
   };
 
-  const addServer = (name: string, command: string) => {
-    const server: McpServerInfo = { name, command, status: 'unknown' };
-    saveServers([...customServers, server]);
-  };
-
   const deleteServer = (index: number) => {
     const next = customServers.filter((_, i) => i !== index);
     saveServers(next);
@@ -881,6 +824,17 @@ export default function SettingsPanel() {
               </div>
             </div>
             <div className="text-[10px] font-mono text-gray-400">ws://127.0.0.1:18925</div>
+            <div className="grid grid-cols-3 gap-2 text-[10px]">
+              <div className={`rounded px-2 py-1 ${launchStatus === 'running' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                Host: {launchStatus}
+              </div>
+              <div className={`rounded px-2 py-1 ${wsStatus === 'connected' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                Bridge: {wsStatus}
+              </div>
+              <div className="rounded px-2 py-1 bg-gray-100 text-gray-500">
+                Next: {launchStatus === 'not_installed' ? 'install host' : wsStatus === 'connected' ? 'ready' : 'start bridge'}
+              </div>
+            </div>
           </div>
 
           {/* Launcher not installed — setup instructions */}
@@ -915,8 +869,6 @@ export default function SettingsPanel() {
               </div>
             </div>
           )}
-
-          <AddServerForm onAdd={addServer} />
         </div>
       </Section>
 

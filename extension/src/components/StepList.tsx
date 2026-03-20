@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Action } from '../types';
 
 interface StepListProps {
@@ -42,58 +42,86 @@ export default function StepList({ actions, currentPlaybackStep }: StepListProps
   if (actions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-10 px-4 text-center">
-        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center mb-2">
-          <svg className="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-3">
+          <svg className="w-6 h-6 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
             <path d="M12 8v4l3 3" />
           </svg>
         </div>
-        <p className="text-xs text-gray-500 font-medium">No steps recorded</p>
-        <p className="text-[10px] text-gray-400 mt-0.5">Click REC to start</p>
+        <p className="text-[13px] text-gray-700 font-bold tracking-tight">No steps recorded</p>
+        <p className="text-[11px] text-gray-400 mt-1 font-medium">Click <span className="text-red-500 font-bold bg-red-50 px-1 rounded">REC</span> to begin tracking</p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-y-auto">
-      {actions.map((action, i) => {
-        const isActive = currentPlaybackStep === i;
-        const isExpanded = expandedIdx === i;
-        return (
-          <div
-            key={action.timestamp + '-' + i}
-            className={`border-b border-gray-100 cursor-pointer transition-colors ${
-              isActive ? 'bg-purple-50 border-l-2 border-l-purple-500' : 'hover:bg-gray-50'
-            }`}
-            onClick={() => setExpandedIdx(isExpanded ? null : i)}
-          >
-            {/* Collapsed row */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5">
-              <span className="text-[10px] font-mono text-gray-400 w-4 text-right flex-shrink-0">{i + 1}</span>
-              <span className={`text-[9px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${TYPE_COLORS[action.type] || 'bg-gray-100 text-gray-500'}`}>
-                {action.type.slice(0, 3).toUpperCase()}
-              </span>
-              <span className="text-xs text-gray-700 truncate flex-1">{formatAction(action)}</span>
-              <span className={`text-[10px] text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>&#9660;</span>
-            </div>
+    <div className="overflow-y-auto px-4 py-4 relative h-full">
+      {/* Timeline spine */}
+      <div className="absolute left-[29px] top-8 bottom-8 w-0.5 bg-gray-200 rounded-full" />
 
-            {/* Expanded detail */}
-            {isExpanded && (
-              <div className="px-3 pb-2 pt-0.5 ml-6 space-y-1 text-[11px]" onClick={e => e.stopPropagation()}>
-                <p className="font-mono text-gray-400 break-all">{action.selector}</p>
-                {action.value && (
-                  <p className="text-gray-600"><span className="text-gray-400">Value:</span> {action.value}</p>
-                )}
-                {action.url && (
-                  <p className="text-gray-600"><span className="text-gray-400">URL:</span> {action.url}</p>
-                )}
-                <p className="text-gray-400">{new Date(action.timestamp).toLocaleTimeString()}</p>
+      <div className="space-y-3">
+        {actions.map((action, i) => {
+          const isActive = currentPlaybackStep === i + 1;
+          const isExpanded = expandedIdx === i;
+          const confidence = Math.round((action.selectorConfidence ?? 0) * 100);
+
+          return (
+            <div key={action.timestamp + '-' + i} className="relative pl-10 group">
+              {/* Timeline Dot */}
+              <div className={`absolute left-[13px] top-1/2 w-3.5 h-3.5 rounded-full border-[2.5px] border-white transform -translate-y-1/2 z-10 transition-colors duration-200 ${isActive ? 'bg-purple-500 shadow-[0_0_0_4px_rgba(168,85,247,0.15)] ring-2 ring-purple-100' : 'bg-blue-400 group-hover:bg-blue-500'
+                }`} />
+
+              {/* Action Card */}
+              <div
+                onClick={() => setExpandedIdx(isExpanded ? null : i)}
+                className={`bg-white rounded-xl border shadow-sm cursor-pointer transition-all duration-200 hover:shadow-md ${isActive ? 'border-purple-300 ring-2 ring-purple-50' : 'border-gray-200 hover:border-blue-200 group-hover:-translate-y-0.5'
+                  }`}
+              >
+                <div className="flex flex-col p-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider uppercase flex-shrink-0 ${TYPE_COLORS[action.type] || 'bg-gray-100 text-gray-500'}`}>
+                      {action.type.slice(0, 4)}
+                    </span>
+                    <span className="text-xs font-semibold text-gray-800 truncate flex-1">{formatAction(action)}</span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide flex-shrink-0 ${confidence >= 80 ? 'bg-green-50 text-green-600' : confidence >= 50 ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'
+                      }`}>
+                      {confidence}%
+                    </span>
+                    <span className="text-[10px] text-gray-300 font-bold ml-1 w-4 text-right">#{i + 1}</span>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-2.5 pt-2.5 border-t border-gray-100 space-y-1.5 text-[11px]" onClick={e => e.stopPropagation()}>
+                      <p className="font-mono bg-gray-50 border border-gray-100 p-1.5 rounded text-gray-500 break-all">{action.selector}</p>
+                      {action.selectorCandidates?.length ? (
+                        <p className="text-gray-500 mt-1 flex flex-wrap gap-1">
+                          <span className="font-semibold text-gray-400">Alts:</span>
+                          {action.selectorCandidates.slice(0, 3).map((candidate, idx) => (
+                            <span key={idx} className="bg-gray-100 px-1 rounded text-[10px] text-gray-600">
+                              {candidate.strategy} <span className="opacity-60">{Math.round(candidate.score * 100)}%</span>
+                            </span>
+                          ))}
+                        </p>
+                      ) : null}
+                      {action.value && (
+                        <p className="text-gray-700 bg-amber-50 p-1.5 rounded border border-amber-100"><strong className="text-amber-700/70 font-semibold">Value:</strong> {action.value}</p>
+                      )}
+                      {action.url && (
+                        <p className="text-gray-500 break-all"><strong className="text-gray-400">URL:</strong> {action.url}</p>
+                      )}
+                      {action.targetSnapshot?.text ? (
+                        <p className="text-gray-600 italic border-l-2 border-gray-200 pl-2 mt-1 py-0.5">"{action.targetSnapshot.text.slice(0, 60)}{action.targetSnapshot.text.length > 60 ? '...' : ''}"</p>
+                      ) : null}
+                      <p className="text-[10px] text-gray-400 font-medium text-right mt-1">{new Date(action.timestamp).toLocaleTimeString()}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-        );
-      })}
-      <div ref={bottomRef} />
+            </div>
+          );
+        })}
+      </div>
+      <div ref={bottomRef} className="h-4" />
     </div>
   );
 }

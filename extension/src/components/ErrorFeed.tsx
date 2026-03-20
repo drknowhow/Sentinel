@@ -168,6 +168,11 @@ export default function ErrorFeed({ errors, isTracking }: ErrorFeedProps) {
               <span className={`text-[9px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${SOURCE_COLORS[error.source] || 'bg-gray-100 text-gray-500'}`}>
                 {SOURCE_LABELS[error.source] || error.source.slice(0, 3).toUpperCase()}
               </span>
+              {(error.count ?? 1) > 1 && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-800 text-white flex-shrink-0">
+                  ×{error.count}
+                </span>
+              )}
               <span className="text-xs text-gray-700 truncate flex-1">{error.message}</span>
               <span className={`text-[10px] text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>&#9660;</span>
             </div>

@@ -7,6 +7,13 @@ function initEdits(actions: Action[], existing?: GuideEdits): GuideEdits {
     guideTitle: 'Sentinel Visual Guide',
     introText: '',
     conclusionText: '',
+    exportOptions: {
+      profile: 'internal',
+      redactSelectors: false,
+      redactValues: false,
+      redactUrls: false,
+      includeDiagnostics: true,
+    },
     steps: actions.map((action, i) => ({
       originalIndex: i,
       title: action.description || action.type.toUpperCase(),

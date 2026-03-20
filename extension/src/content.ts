@@ -1,4 +1,13 @@
-import type { Action, Assertion, AssertionResult, Message } from './types';
+import type {
+  Action,
+  Assertion,
+  AssertionResult,
+  Message,
+  PlaybackRunSummary,
+  PlaybackStepMetric,
+  SelectorCandidate,
+  TargetSnapshot,
+} from './types';
 
 // ── Selector Generation ──
 
@@ -41,6 +50,163 @@ function getSelector(el: HTMLElement): string {
     cur = cur.parentElement;
   }
   return path.join(' > ');
+}
+
+function safeSelector(selector: string): boolean {
+  try {
+    document.querySelector(selector);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getCandidateSelectors(el: HTMLElement): SelectorCandidate[] {
+  const candidates: SelectorCandidate[] = [];
+  const add = (selector: string, strategy: SelectorCandidate['strategy'], score: number) => {
+    if (!selector || !safeSelector(selector)) return;
+    if (candidates.some(candidate => candidate.selector === selector)) return;
+    candidates.push({ selector, strategy, score });
+  };
+
+  if (el.id) add(`#${CSS.escape(el.id)}`, 'id', 1);
+
+  const testId = el.getAttribute('data-testid');
+  if (testId) add(`[data-testid="${CSS.escape(testId)}"]`, 'data-testid', 0.96);
+
+  const ariaLabel = el.getAttribute('aria-label');
+  if (ariaLabel) add(`[aria-label="${CSS.escape(ariaLabel)}"]`, 'aria-label', 0.9);
+
+  const name = (el as HTMLInputElement).name;
+  if (name) add(`${el.tagName.toLowerCase()}[name="${CSS.escape(name)}"]`, 'name', 0.84);
+
+  const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 32);
+  const role = el.getAttribute('role');
+  if (role && text) {
+    const roleMatches = [...document.querySelectorAll<HTMLElement>(`[role="${role}"]`)]
+      .filter(node => (node.textContent || '').trim().replace(/\s+/g, ' ').startsWith(text));
+    if (roleMatches.length === 1 && roleMatches[0] === el) add(`[role="${role}"]`, 'role-text', 0.72);
+  }
+
+  add(getSelector(el), 'path', 0.68);
+  add(el.tagName.toLowerCase(), 'tag', 0.25);
+
+  return candidates.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+
+function getTargetSnapshot(el: HTMLElement): TargetSnapshot {
+  return {
+    tag: el.tagName.toLowerCase(),
+    role: el.getAttribute('role') || undefined,
+    text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 80) || undefined,
+    ariaLabel: el.getAttribute('aria-label') || undefined,
+    placeholder: (el as HTMLInputElement).placeholder || undefined,
+    name: (el as HTMLInputElement).name || undefined,
+    type: (el as HTMLInputElement).type || undefined,
+    className: el.className || undefined,
+  };
+}
+
+function scoreCandidate(el: HTMLElement, snapshot?: TargetSnapshot): number {
+  if (!snapshot) return 0;
+  let score = 0;
+  if (snapshot.tag === el.tagName.toLowerCase()) score += 0.35;
+  if (snapshot.role && snapshot.role === el.getAttribute('role')) score += 0.15;
+  if (snapshot.ariaLabel && snapshot.ariaLabel === el.getAttribute('aria-label')) score += 0.2;
+  if (snapshot.placeholder && snapshot.placeholder === (el as HTMLInputElement).placeholder) score += 0.1;
+  if (snapshot.name && snapshot.name === (el as HTMLInputElement).name) score += 0.1;
+  const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  if (snapshot.text && text) {
+    if (text === snapshot.text) score += 0.2;
+    else if (text.includes(snapshot.text) || snapshot.text.includes(text)) score += 0.1;
+  }
+  return score;
+}
+
+function getVisibleCandidates(snapshot?: TargetSnapshot): HTMLElement[] {
+  const baseSelector = snapshot?.tag || 'button, a, input, textarea, select, [role], [onclick], [tabindex]';
+  return [...document.querySelectorAll<HTMLElement>(baseSelector)]
+    .filter(el => {
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    });
+}
+
+function resolveActionTarget(action: Action): { element: HTMLElement | null; metric: Omit<PlaybackStepMetric, 'durationMs'> } {
+  let attempts = 0;
+  const trySelector = (selector?: string): HTMLElement | null => {
+    if (!selector || !safeSelector(selector)) return null;
+    attempts++;
+    const found = document.querySelector(selector);
+    return found instanceof HTMLElement ? found : null;
+  };
+
+  const primary = trySelector(action.selector);
+  if (primary) {
+    return {
+      element: primary,
+      metric: {
+        index: -1,
+        selector: action.selector,
+        resolvedSelector: action.selector,
+        resolution: 'primary',
+        selectorConfidence: action.selectorConfidence,
+        attempts,
+      },
+    };
+  }
+
+  for (const candidate of action.selectorCandidates || []) {
+    const found = trySelector(candidate.selector);
+    if (found) {
+      return {
+        element: found,
+        metric: {
+          index: -1,
+          selector: action.selector,
+          resolvedSelector: candidate.selector,
+          resolution: 'candidate',
+          selectorConfidence: candidate.score,
+          attempts,
+          warning: `Recovered via ${candidate.strategy} selector`,
+        },
+      };
+    }
+  }
+
+  const heuristicMatches = getVisibleCandidates(action.targetSnapshot)
+    .map(element => ({ element, score: scoreCandidate(element, action.targetSnapshot) }))
+    .filter(item => item.score >= 0.45)
+    .sort((a, b) => b.score - a.score);
+
+  if (heuristicMatches[0]) {
+    attempts += heuristicMatches.length;
+    return {
+      element: heuristicMatches[0].element,
+      metric: {
+        index: -1,
+        selector: action.selector,
+        resolvedSelector: getSelector(heuristicMatches[0].element),
+        resolution: 'heuristic',
+        selectorConfidence: Number(heuristicMatches[0].score.toFixed(2)),
+        attempts,
+        warning: 'Recovered via heuristic element matching',
+      },
+    };
+  }
+
+  return {
+    element: null,
+    metric: {
+      index: -1,
+      selector: action.selector,
+      resolution: 'failed',
+      selectorConfidence: 0,
+      attempts,
+      warning: 'Target not found. Consider repairing selector from recorded metadata.',
+    },
+  };
 }
 
 // ── Human-Readable Descriptions ──
@@ -288,6 +454,26 @@ function _injectInterceptors() {
   s.remove();
 }
 
+let errorTrackingActive = false;
+
+function emitError(source: import('./types').ErrorSource, message: string, extra?: { stack?: string; url?: string; statusCode?: number }) {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'ERROR_CAPTURED',
+      payload: {
+        source,
+        message,
+        stack: extra?.stack,
+        url: extra?.url,
+        statusCode: extra?.statusCode,
+        timestamp: Date.now(),
+      },
+    }).catch(() => { });
+  } catch {
+    // Extension context invalidated
+  }
+}
+
 window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== window) return;
   const d = e.data as { __sentinel?: string; url?: string; method?: string; status?: number; error?: string; duration?: number; level?: string; message?: string };
@@ -298,9 +484,24 @@ window.addEventListener('message', (e: MessageEvent) => {
     _pendingNetCount = Math.max(0, _pendingNetCount - 1);
     _networkLog.push({ url: d.url!, method: d.method!, status: d.status, error: d.error, duration: d.duration!, timestamp: Date.now() });
     if (_networkLog.length > NET_CONSOLE_MAX) _networkLog.shift();
+    if (d.__sentinel === 'net_error' && errorTrackingActive) {
+      emitError('network-error', d.error || 'Network Error', { url: d.url, statusCode: d.status });
+    }
   } else if (d.__sentinel === 'console') {
     _consoleLog.push({ level: d.level as ConsoleEntry['level'], message: d.message!, timestamp: Date.now() });
     if (_consoleLog.length > NET_CONSOLE_MAX) _consoleLog.shift();
+    if (d.level === 'error' && errorTrackingActive) {
+      emitError('console-error', d.message!);
+    }
+  } else if (d.__sentinel === 'page_error') {
+    // Real uncaught exceptions and unhandled rejections from the MAIN world bridge
+    if (errorTrackingActive) {
+      const src = (d as any).source as import('./types').ErrorSource;
+      emitError(src || 'unhandled-exception', d.message || 'Unknown error', {
+        stack: (d as any).stack,
+        url: (d as any).url,
+      });
+    }
   }
 });
 
@@ -328,10 +529,25 @@ const CLICK_DEDUP_MS = 300;
 
 function emitAction(action: Action) {
   try {
-    chrome.runtime.sendMessage({ type: 'RECORD_ACTION', payload: action }).catch(() => {});
+    chrome.runtime.sendMessage({ type: 'RECORD_ACTION', payload: action }).catch(() => { });
   } catch {
     // Extension context invalidated
   }
+}
+
+function buildAction(type: string, target: HTMLElement, extras: Partial<Action> = {}): Action {
+  const selectorCandidates = getCandidateSelectors(target);
+  const selectorConfidence = selectorCandidates[0]?.score ?? 0.4;
+  return {
+    type,
+    selector: selectorCandidates[0]?.selector || getSelector(target),
+    timestamp: Date.now(),
+    url: location.href,
+    selectorCandidates,
+    selectorConfidence,
+    targetSnapshot: getTargetSnapshot(target),
+    ...extras,
+  };
 }
 
 // ── Event Handlers ──
@@ -357,24 +573,20 @@ function handleClick(event: Event) {
   flushAllPendingInputs();
   _showRipple(e.clientX, e.clientY);
 
-  emitAction({
-    type: 'click',
+  emitAction(buildAction('click', target, {
     selector,
     description: describeAction('click', target),
     timestamp: now,
-  });
+  }));
 }
 
 function handleDblClick(event: Event) {
   const raw = event.target as HTMLElement;
   if (!raw) return;
   const target = findInteractiveAncestor(raw);
-  emitAction({
-    type: 'dblclick',
-    selector: getSelector(target),
+  emitAction(buildAction('dblclick', target, {
     description: describeAction('dblclick', target),
-    timestamp: Date.now(),
-  });
+  }));
 }
 
 function handleInput(event: Event) {
@@ -386,13 +598,10 @@ function handleInput(event: Event) {
 
   // For select elements, emit immediately (discrete choice, not typing)
   if (target.tagName.toLowerCase() === 'select') {
-    emitAction({
-      type: 'input',
-      selector: getSelector(el),
+    emitAction(buildAction('input', el, {
       value: target.value,
       description: describeAction('input', el, target.value),
-      timestamp: Date.now(),
-    });
+    }));
     return;
   }
 
@@ -422,13 +631,10 @@ function flushInput(el: HTMLElement) {
   pendingInputs.delete(el);
   const value = (el as HTMLInputElement).value;
   if (!value && !value?.trim()) return; // skip empty
-  emitAction({
-    type: 'input',
-    selector: getSelector(el),
+  emitAction(buildAction('input', el, {
     value,
     description: describeAction('input', el, value),
-    timestamp: Date.now(),
-  });
+  }));
 }
 
 function flushAllPendingInputs() {
@@ -457,13 +663,10 @@ function handleKeydown(event: Event) {
   const keyLabel = parts.join('+');
   if (!keyLabel) return;
 
-  emitAction({
-    type: 'keydown',
-    selector: getSelector(target),
+  emitAction(buildAction('keydown', target, {
     value: keyLabel,
     description: describeAction('keydown', target, keyLabel),
-    timestamp: Date.now(),
-  });
+  }));
 }
 
 function handleScroll() {
@@ -482,6 +685,10 @@ function handleScroll() {
       value: `${window.scrollX},${window.scrollY}`,
       description: 'Scrolled page',
       timestamp: Date.now(),
+      url: location.href,
+      selectorCandidates: [{ selector: 'window', strategy: 'tag', score: 1 }],
+      selectorConfidence: 1,
+      targetSnapshot: { tag: 'window', text: document.title },
     });
   }, SCROLL_DEBOUNCE_MS);
 }
@@ -490,12 +697,9 @@ function handleSubmit(event: Event) {
   const target = event.target as HTMLElement;
   if (!target) return;
   flushAllPendingInputs();
-  emitAction({
-    type: 'submit',
-    selector: getSelector(target),
+  emitAction(buildAction('submit', target, {
     description: describeAction('submit', target),
-    timestamp: Date.now(),
-  });
+  }));
 }
 
 // ── Navigation Tracking ──
@@ -511,6 +715,9 @@ function handleNavigation() {
     url: newUrl,
     description: `Navigated to ${location.pathname}`,
     timestamp: Date.now(),
+    selectorCandidates: [{ selector: 'window', strategy: 'tag', score: 1 }],
+    selectorConfidence: 1,
+    targetSnapshot: { tag: 'window', text: document.title },
   });
 }
 
@@ -634,23 +841,35 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 
 // ── Assertion Evaluation ──
 
-function evaluateAssertion(assertion: Assertion): AssertionResult {
+async function waitForNetworkQuiet(duration = 500, timeout = 5000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (_pendingNetCount === 0) {
+      await new Promise(resolve => setTimeout(resolve, duration));
+      if (_pendingNetCount === 0) return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return false;
+}
+
+function evaluateAssertionOnce(assertion: Assertion): AssertionResult {
   try {
-    const el = document.querySelector(assertion.selector);
+    const el = assertion.selector ? document.querySelector(assertion.selector) : null;
 
     switch (assertion.type) {
       case 'exists':
         return { assertion, passed: el !== null };
       case 'visible': {
         if (!el) return { assertion, passed: false, error: 'Element not found' };
-        const rect = el.getBoundingClientRect();
+        const rect = (el as HTMLElement).getBoundingClientRect();
         const style = getComputedStyle(el);
         const isVisible = rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
         return { assertion, passed: isVisible };
       }
       case 'hidden': {
         if (!el) return { assertion, passed: true };
-        const rect = el.getBoundingClientRect();
+        const rect = (el as HTMLElement).getBoundingClientRect();
         const style = getComputedStyle(el);
         const isHidden = rect.width === 0 || rect.height === 0 || style.display === 'none' || style.visibility === 'hidden';
         return { assertion, passed: isHidden };
@@ -669,12 +888,70 @@ function evaluateAssertion(assertion: Assertion): AssertionResult {
         if (!el) return { assertion, passed: false, error: 'Element not found' };
         return { assertion, passed: el.classList.contains(assertion.expected ?? ''), actual: el.className };
       }
+      case 'value-equals': {
+        if (!el) return { assertion, passed: false, error: 'Element not found' };
+        const value = (el as HTMLInputElement).value ?? '';
+        return { assertion, passed: value === (assertion.expected ?? ''), actual: value };
+      }
+      case 'attribute-equals': {
+        if (!el) return { assertion, passed: false, error: 'Element not found' };
+        if (!assertion.attributeName) return { assertion, passed: false, error: 'Missing attribute name' };
+        const actual = el.getAttribute(assertion.attributeName) ?? '';
+        return { assertion, passed: actual === (assertion.expected ?? ''), actual };
+      }
+      case 'url-contains': {
+        return { assertion, passed: location.href.includes(assertion.expected ?? ''), actual: location.href };
+      }
+      case 'url-equals': {
+        return { assertion, passed: location.href === (assertion.expected ?? ''), actual: location.href };
+      }
+      case 'checked': {
+        if (!(el instanceof HTMLInputElement)) return { assertion, passed: false, error: 'Target is not an input element' };
+        return { assertion, passed: el.checked, actual: String(el.checked) };
+      }
+      case 'unchecked': {
+        if (!(el instanceof HTMLInputElement)) return { assertion, passed: false, error: 'Target is not an input element' };
+        return { assertion, passed: !el.checked, actual: String(el.checked) };
+      }
       default:
         return { assertion, passed: false, error: `Unknown assertion type: ${assertion.type}` };
     }
   } catch (err) {
     return { assertion, passed: false, error: String(err) };
   }
+}
+
+async function evaluateAssertion(assertion: Assertion): Promise<AssertionResult> {
+  const startedAt = Date.now();
+  if (assertion.type === 'network-idle') {
+    const idle = await waitForNetworkQuiet(assertion.retryIntervalMs || 500, assertion.retryMs || 5000);
+    return {
+      assertion,
+      passed: idle,
+      actual: idle ? 'network idle' : `pending=${_pendingNetCount}`,
+      durationMs: Date.now() - startedAt,
+      attempts: 1,
+      error: idle ? undefined : 'Timed out waiting for network idle',
+    };
+  }
+
+  const retryMs = assertion.retryMs || 0;
+  const retryIntervalMs = assertion.retryIntervalMs || 250;
+  let attempts = 0;
+  let lastResult = evaluateAssertionOnce(assertion);
+  attempts++;
+
+  while (!lastResult.passed && retryMs > 0 && Date.now() - startedAt < retryMs) {
+    await new Promise(resolve => setTimeout(resolve, retryIntervalMs));
+    lastResult = evaluateAssertionOnce(assertion);
+    attempts++;
+  }
+
+  return {
+    ...lastResult,
+    attempts,
+    durationMs: Date.now() - startedAt,
+  };
 }
 
 async function playbackSession(
@@ -688,17 +965,20 @@ async function playbackSession(
   playbackAbort = new AbortController();
   const signal = playbackAbort.signal;
   const results: AssertionResult[] = [];
+  const stepMetrics: PlaybackStepMetric[] = [];
+  const startedAt = Date.now();
 
   try {
     for (let i = 0; i < session.length; i++) {
       if (signal.aborted) break;
 
       const action = session[i];
+      const stepStartedAt = Date.now();
 
       chrome.runtime.sendMessage({
         type: 'PLAYBACK_PROGRESS',
         payload: { currentStep: i + 1, totalSteps: session.length },
-      }).catch(() => {});
+      }).catch(() => { });
 
       await waitForUnpause(signal);
 
@@ -710,7 +990,8 @@ async function playbackSession(
         // Navigation events are informational during playback
         await delay(300 / speed, signal);
       } else {
-        const element = document.querySelector(action.selector) as HTMLElement;
+        const resolved = resolveActionTarget(action);
+        const element = resolved.element;
 
         if (element) {
           const originalOutline = element.style.outline;
@@ -739,15 +1020,27 @@ async function playbackSession(
           }
 
           element.style.outline = originalOutline;
+          stepMetrics.push({
+            ...resolved.metric,
+            index: i,
+            durationMs: Date.now() - stepStartedAt,
+            url: location.href,
+          });
         } else {
           console.error(`Sentinel: Element not found for selector: ${action.selector}`);
+          stepMetrics.push({
+            ...resolved.metric,
+            index: i,
+            durationMs: Date.now() - stepStartedAt,
+            url: location.href,
+          });
         }
       }
 
       // Evaluate assertions scheduled after this step
       for (const assertion of assertions) {
         if (assertion.afterStep === i) {
-          results.push(evaluateAssertion(assertion));
+          results.push(await evaluateAssertion(assertion));
         }
       }
 
@@ -771,35 +1064,37 @@ async function playbackSession(
   }
 
   console.log('Sentinel: Playback complete');
+  const completedAt = Date.now();
+  const completedSteps = stepMetrics.filter(metric => metric.resolution !== 'failed').length
+    + session.filter(action => action.type === 'scroll' || action.type === 'navigation').length;
+  const recoveredSteps = stepMetrics.filter(metric => metric.resolution === 'candidate' || metric.resolution === 'heuristic').length;
+  const failedSteps = stepMetrics.filter(metric => metric.resolution === 'failed').length;
+  const averageConfidence = stepMetrics.length
+    ? Number((stepMetrics.reduce((sum, metric) => sum + (metric.selectorConfidence ?? 0), 0) / stepMetrics.length).toFixed(2))
+    : 1;
+  const summary: PlaybackRunSummary = {
+    startedAt,
+    completedAt,
+    totalSteps: session.length,
+    completedSteps,
+    recoveredSteps,
+    failedSteps,
+    averageConfidence,
+    assertionPassCount: results.filter(result => result.passed).length,
+    assertionFailCount: results.filter(result => !result.passed).length,
+    flaky: recoveredSteps > 0 || failedSteps > 0,
+    stepMetrics,
+  };
   chrome.runtime.sendMessage({
     type: 'PLAYBACK_COMPLETE',
-    payload: { results },
-  }).catch(() => {});
+    payload: { results, summary },
+  }).catch(() => { });
 }
 
 // ── Error Tracking ──
 
-let errorTrackingActive = false;
 let originalConsoleError: (typeof console.error) | null = null;
 let perfObserver: PerformanceObserver | null = null;
-
-function emitError(source: import('./types').ErrorSource, message: string, extra?: { stack?: string; url?: string; statusCode?: number }) {
-  try {
-    chrome.runtime.sendMessage({
-      type: 'ERROR_CAPTURED',
-      payload: {
-        source,
-        message,
-        stack: extra?.stack,
-        url: extra?.url,
-        statusCode: extra?.statusCode,
-        timestamp: Date.now(),
-      },
-    }).catch(() => {});
-  } catch {
-    // Extension context invalidated
-  }
-}
 
 function onWindowError(event: ErrorEvent) {
   emitError('unhandled-exception', event.message, {
@@ -904,7 +1199,7 @@ function selectElement(e: MouseEvent) {
   if (!target || target === inspectOverlay) return;
 
   const selector = getSelector(target);
-  chrome.runtime.sendMessage({ type: 'ELEMENT_SELECTED', payload: { selector, purpose: inspectionPurpose } }).catch(() => {});
+  chrome.runtime.sendMessage({ type: 'ELEMENT_SELECTED', payload: { selector, purpose: inspectionPurpose } }).catch(() => { });
   stopInspection();
 }
 
@@ -1052,12 +1347,17 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
             const [x, y] = (p.value || '0,0').split(',').map(Number);
             window.scrollTo({ left: x, top: y, behavior: 'smooth' });
           }
+          const selectorCandidates = getCandidateSelectors(el);
           sendResponse({
             success: true,
             description: describeAction(p.type, el, p.value),
             type: p.type,
             selector: p.selector,
             value: p.value,
+            url: location.href,
+            selectorCandidates,
+            selectorConfidence: selectorCandidates[0]?.score ?? 0.4,
+            targetSnapshot: getTargetSnapshot(el),
           });
         } catch (err) {
           _suppressNextRecord = false;

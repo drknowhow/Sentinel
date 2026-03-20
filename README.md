@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Web Application Tester & Guide Creator</strong><br>
-  Record web interactions, capture bugs, and generate step-by-step visual guides — no code required.
+  Record web interactions, capture bugs and feature requests, and generate step-by-step visual guides — manually or fully automated via 50+ MCP tools.
 </p>
 
 <p align="center">
@@ -23,16 +23,22 @@
 ## Features
 
 ### Record & Replay
-Click record and use your web app normally. Sentinel captures every click, keystroke, scroll, and navigation with intelligent noise reduction. Play sessions back at adjustable speed (0.5x–4x) or step through them one at a time with element highlighting.
+Click record and use your web app normally. Sentinel captures every click, keystroke, scroll, drag-and-drop, and navigation with intelligent noise reduction and smart selectors with fallback candidates. Play sessions back at adjustable speed (0.5x–4x) or step through them one at a time with element highlighting and automatic selector recovery.
 
 ### Auto-Generate Visual Guides
-Turn any recorded session into a polished, standalone HTML guide with embedded screenshots. Reorder steps, add titles and notes, toggle screenshots, and export — ready to share via email, Slack, or your wiki.
+Turn any recorded session into a polished, standalone HTML guide with embedded screenshots. Edit in the built-in guide editor, add custom sections (notes, warnings, tips, headings), choose internal or client export profiles, and use the block-based renderer for fully custom reports.
 
 ### Test with Assertions
-Add assertions to any step — check that elements are visible, hidden, contain specific text, or have a CSS class. Run playback and get a clear pass/fail test report with actual vs. expected values.
+Add assertions to any step — check that elements are visible, hidden, contain specific text, or have a CSS class. Configure retry logic for async elements. Run playback and get a detailed test report with pass/fail results, selector recovery details, and flakiness detection across runs.
 
-### Track Bugs & Feature Requests
-Enable error tracking to automatically capture console errors, unhandled exceptions, failed network requests, and CSP violations. Annotate errors as bug reports with severity levels, or create feature requests tied to specific page elements. Export everything as a styled HTML report or JSON.
+### Track Bugs & Issues
+Enable error tracking to automatically capture console errors, unhandled exceptions, failed network requests, and CSP violations. Issues include severity levels, fingerprinting for duplicate detection, clustering for pattern recognition, and full error context (network logs, console output). Export styled HTML reports or analyze issues via MCP.
+
+### Feature Requests
+Create feature requests tied to specific page elements. Inspect an element, describe the enhancement, set priority, and export — all with screenshots and DOM context.
+
+### AI Automation (MCP)
+50+ MCP tools let Claude Code, Cursor, Copilot, and other AI assistants control Sentinel programmatically. Navigate pages, query elements, record sessions, take and compare screenshots, drag-and-drop, manage multi-project configurations, and generate custom reports — all hands-free in a single conversation.
 
 ### Record Video Clips
 Capture short video recordings of your active tab (up to 5 minutes) and download them as WebM files.
@@ -76,16 +82,20 @@ Sentinel/
 ├── extension/
 │   ├── public/              # Static assets, manifest.json, icons
 │   └── src/
-│       ├── background.ts    # Service worker — coordinates recording/playback/exports
-│       ├── content.ts       # Content script — action capture, playback, error tracking
+│       ├── background.ts    # Service worker — state, screenshots, AI logging, WebSocket bridge
+│       ├── content.ts       # Content script — recording, playback, inspection, element querying
 │       ├── App.tsx           # Main side panel UI
 │       ├── EditorApp.tsx     # Guide editor (opens in new tab)
-│       ├── components/       # React components (Header, StepList, ErrorFeed, etc.)
+│       ├── components/       # React components (Header, StepList, ErrorFeed, IssueList, AiLog, etc.)
 │       ├── hooks/            # Custom hooks (state sync, video recording, guide editor)
-│       └── lib/              # Utilities (storage, HTML generation, message types)
-├── STARTUP_GUIDE.html        # Comprehensive user guide
+│       └── lib/              # Utilities (storage, HTML/report generation, message types)
+├── mcp-server/
+│   ├── sentinel_mcp.py      # MCP server (50+ tools)
+│   ├── launcher.py          # Native messaging launcher
+│   └── install_host.py      # Native host registration
+├── docs/                    # GitHub Pages site & user guide
 ├── PRIVACY_POLICY.md         # Privacy policy
-└── STORE_LISTING.md          # Chrome Web Store listing copy
+└── STARTUP_GUIDE.html        # Quick-start guide
 ```
 
 ---
@@ -95,12 +105,14 @@ Sentinel/
 | Permission | Why |
 |---|---|
 | `activeTab` | Access the current tab to record actions and capture screenshots |
-| `storage` | Save sessions, issues, and preferences locally |
+| `storage` | Save sessions, issues, projects, and preferences locally |
 | `scripting` | Inject recording and playback scripts into web pages |
 | `downloads` | Save exported guides, reports, and video files |
 | `tabs` | Identify the active tab and open the guide editor |
 | `sidePanel` | Display the Sentinel UI in Chrome's side panel |
 | `tabCapture` | Record video of the active browser tab |
+| `alarms` | Schedule periodic tasks (connection health checks) |
+| `nativeMessaging` | Communicate with the native launcher to start/stop the MCP server |
 
 ---
 

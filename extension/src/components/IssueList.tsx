@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { sendMessage } from '../lib/messages';
-import type { Issue } from '../types';
+import type { Action, Issue, IssueAnalysis } from '../types';
+import { analyzeIssues } from '../lib/storage';
 
 interface IssueListProps {
   issues: Issue[];
@@ -16,21 +17,32 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 function stripScreenshots(issues: Issue[]): Issue[] {
-  return issues.map(i => ({ ...i, screenshot: undefined }));
+  return issues.map(issue => ({ ...issue, screenshot: undefined }));
 }
 
 export default function IssueList({ issues }: IssueListProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
+  const [analysis, setAnalysis] = useState<IssueAnalysis | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const filtered = filter === 'all' ? issues : issues.filter(i => i.type === filter);
+  const filtered = filter === 'all' ? issues : issues.filter(issue => issue.type === filter);
+
+  const clusters = useMemo(() => analysis?.clusters || [], [analysis]);
+
+  const refreshAnalysis = async () => {
+    const result = await chrome.storage.local.get('currentSession');
+    const currentSession = (result.currentSession as Action[] | undefined) ?? [];
+    setAnalysis(analyzeIssues(issues, currentSession));
+  };
 
   const handleDelete = (id: string) => {
     sendMessage('DELETE_ISSUE', { id });
+    setTimeout(() => refreshAnalysis(), 200);
   };
 
-  const handleExportHtml = () => {
+  const handleExportHtml = async () => {
+    await refreshAnalysis();
     sendMessage('EXPORT_ISSUES');
   };
 
@@ -54,7 +66,6 @@ export default function IssueList({ issues }: IssueListProps) {
       try {
         const imported = JSON.parse(reader.result as string) as Issue[];
         if (!Array.isArray(imported)) return;
-        // Save each imported issue
         for (const issue of imported) {
           sendMessage('SAVE_ISSUE', {
             type: issue.type,
@@ -66,152 +77,199 @@ export default function IssueList({ issues }: IssueListProps) {
             capturedError: issue.capturedError,
           });
         }
+        setTimeout(() => refreshAnalysis(), 250);
       } catch {
-        // Invalid JSON
+        // Ignore invalid JSON imports.
       }
     };
     reader.readAsText(file);
-    // Reset input
     if (fileRef.current) fileRef.current.value = '';
   };
 
   return (
-    <div className="border-t border-gray-200">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 flex justify-between items-center"
-      >
-        <span>
-          Issues
-          {issues.length > 0 && (
-            <span className="ml-1.5 text-xs text-gray-400">({issues.length})</span>
-          )}
-        </span>
-        <span className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>&#9660;</span>
-      </button>
-
-      {expanded && (
-        <div className="px-4 pb-3 space-y-2">
-          {/* Filter row */}
-          <div className="flex gap-1.5 items-center">
-            {(['all', 'bug', 'feature-request'] as Filter[]).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-2 py-1 text-xs rounded ${
-                  filter === f
-                    ? 'bg-gray-800 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+    <div className="flex flex-col h-full">
+      <div className="px-4 pt-3 pb-2 space-y-2">
+        <div className="flex gap-1.5 items-center">
+          {(['all', 'bug', 'feature-request'] as Filter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-2 py-1 text-xs rounded ${filter === f
+                ? 'bg-gray-800 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
-              >
-                {f === 'all' ? 'All' : f === 'bug' ? 'Bugs' : 'Features'}
-              </button>
+            >
+              {f === 'all' ? `All (${issues.length})` : f === 'bug' ? 'Bugs' : 'Features'}
+            </button>
+          ))}
+          <div className="flex-1" />
+          <button
+            onClick={() => setShowAnalysis(!showAnalysis)}
+            className={`px-2 py-1 text-xs rounded ${showAnalysis ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+          >
+            Analytics
+          </button>
+        </div>
+
+        {showAnalysis && analysis && (
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="bg-gray-50 rounded px-2 py-1.5">
+              <div className="text-gray-400">Duplicates</div>
+              <div className="font-semibold text-gray-700">{analysis.duplicateCount}</div>
+            </div>
+            <div className="bg-gray-50 rounded px-2 py-1.5">
+              <div className="text-gray-400">Pages impacted</div>
+              <div className="font-semibold text-gray-700">{analysis.byPage.length}</div>
+            </div>
+            <div className="bg-gray-50 rounded px-2 py-1.5">
+              <div className="text-gray-400">With screenshots</div>
+              <div className="font-semibold text-gray-700">{analysis.issuesWithScreenshots.length}</div>
+            </div>
+          </div>
+        )}
+
+        {showAnalysis && clusters.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Clusters</div>
+            {clusters.slice(0, 4).map(cluster => (
+              <div key={cluster.id} className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                <div className="font-medium">{cluster.title}</div>
+                <div>{cluster.issueIds.length} related issues</div>
+              </div>
             ))}
           </div>
+        )}
 
-          {/* Export/Import row */}
-          {issues.length > 0 && (
-            <div className="flex gap-1.5">
-              <button
-                onClick={handleExportHtml}
-                className="px-2 py-1 text-xs rounded bg-green-100 text-green-700 hover:bg-green-200"
-                title="Export as HTML report"
-              >
-                HTML Report
-              </button>
-              <button
-                onClick={handleExportJson}
-                className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
-                title="Export as JSON (no images)"
-              >
-                JSON Export
-              </button>
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
-                title="Import issues from JSON"
-              >
-                Import
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleImportJson}
-              />
-            </div>
-          )}
+        {issues.length > 0 && (
+          <div className="flex gap-1.5">
+            <button
+              onClick={handleExportHtml}
+              className="px-2 py-1 text-xs rounded bg-green-100 text-green-700 hover:bg-green-200"
+              title="Export as HTML report"
+            >
+              HTML Report
+            </button>
+            <button
+              onClick={handleExportJson}
+              className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+              title="Export as JSON (no images)"
+            >
+              JSON Export
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
+              title="Import issues from JSON"
+            >
+              Import
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={handleImportJson}
+            />
+          </div>
+        )}
+      </div>
 
-          {/* Empty + import when no issues */}
-          {issues.length === 0 && (
-            <div className="text-center py-2 space-y-1.5">
-              <p className="text-xs text-gray-400">No issues yet.</p>
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
-              >
-                Import from JSON
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleImportJson}
-              />
-            </div>
-          )}
-
-          <div className="max-h-56 overflow-y-auto space-y-1">
-            {filtered.map(issue => (
-              <details key={issue.id} className="bg-gray-50 rounded">
-                <summary className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-gray-100">
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${SEVERITY_COLORS[issue.severity]}`} />
-                  <span className={`px-1 py-0.5 rounded text-[10px] font-bold ${
-                    issue.type === 'bug'
-                      ? 'bg-red-100 text-red-600'
-                      : 'bg-blue-100 text-blue-600'
+      {issues.length === 0 ? (
+        <div className="flex flex-col items-center justify-center flex-1 py-10 px-4 text-center">
+          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center mb-2">
+            <svg className="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
+            </svg>
+          </div>
+          <p className="text-xs text-gray-500 font-medium">No issues yet</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">Start recording with +BUG to auto-capture issues</p>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="mt-3 px-3 py-1.5 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
+          >
+            Import from JSON
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleImportJson}
+          />
+        </div>
+      ) : (
+        <div className="overflow-y-auto flex-1 px-4 pb-4 space-y-3 pt-1">
+          {filtered.map(issue => (
+            <div key={issue.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col group transition-shadow hover:shadow-md">
+              <div className="px-3 py-2 bg-gray-50 flex items-start gap-2 border-b border-gray-100">
+                <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${SEVERITY_COLORS[issue.severity]}`} />
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase border mt-0.5 ${issue.type === 'bug'
+                    ? 'bg-red-50 text-red-600 border-red-100'
+                    : 'bg-blue-50 text-blue-600 border-blue-100'
                   }`}>
-                    {issue.type === 'bug' ? 'BUG' : 'FEAT'}
+                  {issue.type === 'bug' ? 'BUG' : 'FEATURE'}
+                </span>
+                <span className="flex-1 font-semibold text-gray-800 text-[11px] leading-snug break-words mt-0.5">
+                  {issue.title}
+                </span>
+
+                {issue.capturedError?.count && issue.capturedError.count > 1 ? (
+                  <span className="flex-shrink-0 mt-0.5 bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-200" title={`${issue.capturedError.count} occurrences`}>
+                    &times;{issue.capturedError.count}
                   </span>
-                  <span className="flex-1 truncate text-gray-800">{issue.title}</span>
-                  <button
-                    onClick={e => { e.preventDefault(); handleDelete(issue.id); }}
-                    className="text-gray-400 hover:text-red-500 px-1 flex-shrink-0"
-                  >
-                    &#10005;
-                  </button>
-                </summary>
-                <div className="px-3 pb-2 text-xs space-y-1">
-                  <p className="text-gray-500">
-                    <strong>Page:</strong> {issue.pageUrl}
-                  </p>
-                  {issue.selector && (
-                    <p className="font-mono text-gray-500 truncate">
-                      <strong>Element:</strong> {issue.selector}
-                    </p>
-                  )}
-                  {issue.notes && (
-                    <p className="text-gray-700 whitespace-pre-wrap">{issue.notes}</p>
-                  )}
-                  {issue.capturedError && (
-                    <div className="bg-red-50 rounded p-1.5 mt-1">
-                      <p className="text-red-600 font-mono truncate">{issue.capturedError.message}</p>
-                      {issue.capturedError.stack && (
-                        <pre className="text-[10px] text-gray-500 mt-1 max-h-20 overflow-auto whitespace-pre-wrap">
-                          {issue.capturedError.stack}
-                        </pre>
-                      )}
-                    </div>
-                  )}
-                  <p className="text-gray-400">
-                    {new Date(issue.createdAt).toLocaleString()} &middot; {issue.severity}
-                  </p>
+                ) : null}
+
+                <button
+                  onClick={e => { e.preventDefault(); handleDelete(issue.id); }}
+                  className="text-gray-400 hover:text-red-500 hover:bg-red-50 w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100 -mr-1"
+                  title="Delete"
+                >
+                  &#10005;
+                </button>
+              </div>
+
+              <div className="p-3 text-[11px] space-y-2.5">
+                <div className="flex justify-between items-center border-b border-gray-50 pb-2">
+                  <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider">{issue.severity} Severity</span>
+                  <span className="text-gray-400 text-[10px] font-medium">{new Date(issue.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
                 </div>
-              </details>
-            ))}
-          </div>
+
+                <p className="text-gray-500 truncate" title={issue.pageUrl}>
+                  <strong className="text-gray-700 font-semibold mr-1">Page:</strong>{issue.pageUrl.replace(/^https?:\/\//, '')}
+                </p>
+
+                {issue.selector && (
+                  <p className="font-mono bg-gray-50 p-1.5 rounded text-gray-500 truncate border border-gray-100" title={issue.selector}>
+                    <strong className="text-gray-700 font-sans font-semibold mr-1">Element:</strong>{issue.selector}
+                  </p>
+                )}
+
+                {issue.notes && (
+                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed bg-amber-50/40 p-2.5 rounded border border-amber-100/50">{issue.notes}</p>
+                )}
+
+                {issue.correlatedStepIndices?.length ? (
+                  <p className="text-purple-700 bg-purple-50/50 border border-purple-100/50 px-2 py-1.5 rounded inline-flex items-center gap-1.5 font-medium">
+                    <svg className="w-3 h-3 text-purple-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                    </svg>
+                    Related steps: {issue.correlatedStepIndices.map(index => `#${index + 1}`).join(', ')}
+                  </p>
+                ) : null}
+
+                {issue.capturedError && (
+                  <div className="bg-red-50/30 rounded p-2.5 border border-red-100/50">
+                    <p className="text-red-700 font-mono text-[10px] font-semibold break-all">{issue.capturedError.message}</p>
+                    {issue.capturedError.stack && (
+                      <pre className="text-[9px] text-gray-500 mt-2 max-h-24 overflow-auto whitespace-pre-wrap font-mono leading-relaxed pl-2.5 border-l-2 border-red-200">
+                        {issue.capturedError.stack.split('\n').slice(0, 4).join('\n')}{issue.capturedError.stack.split('\n').length > 4 ? '\n...' : ''}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

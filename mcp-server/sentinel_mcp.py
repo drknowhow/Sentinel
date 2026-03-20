@@ -184,13 +184,17 @@ async def sentinel_status() -> dict[str, Any]:
     """Get the current Sentinel extension status and project context.
 
     Returns:
-      isRecording, isErrorTracking, actionCount, errorCount, issueCount — extension state.
+      isRecording, isErrorTracking, isAttached — extension state.
+      actionCount, errorCount, issueCount — current session counts.
       currentUrl — the active browser tab's URL.
       project.name — human name for the project set in Settings.
       project.path — filesystem path to the project source folder. Use this with
                      your file-reading tools to understand the codebase before acting.
       project.devUrl — the dev server URL for this project. Navigate here at the
                        start of any task unless the user specifies otherwise.
+
+    isAttached indicates whether the content script is injected in the active tab.
+    Most tools auto-attach, so you rarely need to call sentinel_attach manually.
 
     Always call this first at the start of a task to load project context.
     """
@@ -200,9 +204,14 @@ async def sentinel_status() -> dict[str, Any]:
 # ── Guide Creation Tools ──
 
 @mcp.tool()
-async def sentinel_start_recording() -> dict[str, Any]:
-    """Start recording user interactions in the active tab. Clears any previous session."""
-    return await _send_command("API_START_RECORDING")
+async def sentinel_start_recording(append: bool = False) -> dict[str, Any]:
+    """Start recording user interactions in the active tab.
+
+    Args:
+        append: If True, keep existing steps and append new actions. If False (default),
+                clear the current session before recording.
+    """
+    return await _send_command("API_START_RECORDING", {"append": append})
 
 
 @mcp.tool()
@@ -407,11 +416,14 @@ async def sentinel_save_issue(type: str = "bug", title: str = "", notes: str = "
 
 @mcp.tool()
 async def sentinel_get_issues() -> dict[str, Any]:
-    """Get all saved issues (without screenshot data).
+    """Get all saved issues (lightweight — no screenshots or context).
 
-    Returns a flat list of issues with all fields except screenshot base64 data.
-    Use this to read titles, notes, pageUrls, and IDs before composing a report.
-    To also get screenshot data for specific issues, use sentinel_get_issues_with_screenshots.
+    Returns a flat list of issues with: id, type, title, notes, severity, pageUrl, selector,
+    capturedError, correlatedStepIndices, createdAt.
+
+    Screenshots and runtime context (network/console logs) are stripped to keep payloads small.
+    Use sentinel_get_issues_with_screenshots for images.
+    Use sentinel_get_issue_context for network/console logs of a specific issue.
     """
     return await _send_command("API_GET_ISSUES")
 
@@ -459,6 +471,59 @@ async def sentinel_update_issue(id: str, title: str = "", notes: str = "", sever
     if not updates:
         return {"success": False, "error": "No fields to update provided"}
     return await _send_command("API_UPDATE_ISSUE", {"id": id, "updates": updates})
+
+
+@mcp.tool()
+async def sentinel_delete_issue(id: str) -> dict[str, Any]:
+    """Delete an issue by ID.
+
+    Args:
+        id: Issue ID (from sentinel_get_issues)
+    """
+    return await _send_command("API_DELETE_ISSUE", {"id": id})
+
+
+@mcp.tool()
+async def sentinel_clear_session() -> dict[str, Any]:
+    """Clear the entire current session — steps, errors, issues, assertions, and guide edits.
+
+    Use this to reset to a clean state without starting a new recording.
+    """
+    return await _send_command("API_CLEAR_SESSION")
+
+
+@mcp.tool()
+async def sentinel_get_issue_context(id: str) -> dict[str, Any]:
+    """Get the runtime context captured when an issue was saved.
+
+    Returns the network log (last 20 XHR/fetch requests with url, method, status, duration),
+    console log (last 30 entries with level and message), and captured JS errors at the time
+    the issue was created. Use this to include evidence like failing API calls or error stacks
+    in reports.
+
+    Args:
+        id: Issue ID (from sentinel_get_issues)
+    """
+    return await _send_command("API_GET_ISSUE_CONTEXT", {"id": id})
+
+
+@mcp.tool()
+async def sentinel_get_test_results() -> dict[str, Any]:
+    """Get results from the last playback/test run.
+
+    Returns:
+      results — list of assertion results with: assertion (type, selector, expected),
+                passed (bool), actual, error, attempts, durationMs.
+      summary — PlaybackRunSummary with: totalSteps, completedSteps, recoveredSteps,
+                failedSteps, averageConfidence, assertionPassCount, assertionFailCount,
+                flaky (bool), stepMetrics [{index, selector, resolution, confidence,
+                attempts, durationMs, warning}], startedAt, completedAt.
+      sessionId — ID of the session that was played back.
+
+    Call this after sentinel_run_saved_session completes (or use wait=True on that tool).
+    Use the data to build test run reports with sentinel_export_custom_report.
+    """
+    return await _send_command("API_GET_TEST_RESULTS")
 
 
 @mcp.tool()
@@ -694,6 +759,63 @@ async def sentinel_export_custom_report(body: str, title: str = "Sentinel Issue 
     return {"path": output_path, "size": len(html)}
 
 
+@mcp.tool()
+async def sentinel_render_blocks(
+    title: str,
+    blocks: list[dict],
+    output_path: str = "",
+) -> dict[str, Any]:
+    """Compose an HTML report from typed content blocks. Each block is auto-rendered using the
+    Sentinel design system — no raw HTML needed. Mix and match block types freely.
+
+    This is the PREFERRED way to create reports. Instead of writing HTML, describe what to show.
+    The renderer has access to all stored data (issues, session steps, test results) and renders
+    them with full styling, screenshots, and evidence automatically.
+
+    Args:
+        title: Page/document title
+        blocks: List of block dicts. Each must have a "type" key. Supported types:
+
+            hero        — Banner.     Keys: title, subtitle (optional), meta (optional, defaults to date)
+            stats       — Stats row.  Keys: items [{label, value, color}]  color: red|orange|yellow|green|blue|purple
+            divider     — Section break. Keys: label (optional — omit for plain <hr>)
+            heading     — Section heading. Keys: text
+            text        — Paragraph.  Keys: content
+            issue_card  — Auto-render a saved issue with screenshot + error detail. Keys: issue_id
+            step_card   — Auto-render a recorded step with screenshot. Keys: step_index (0-based)
+            test_results — Auto-render full assertion table + playback summary stats. No extra keys needed.
+            context     — Auto-render network/console evidence for an issue. Keys: issue_id
+            callout     — Callout box. Keys: style (note|warning|tip|danger|success), title (optional), body
+            table       — Data table. Keys: headers [str], rows [[str]]
+            checklist   — Check list. Keys: items [{text, status}]  status: done (default)|pending|warn
+            timeline    — Event timeline. Keys: events [{time, title, body (optional)}]
+            html        — Raw HTML passthrough. Keys: content
+
+        output_path: Where to save the HTML file (defaults to temp dir)
+
+    Example:
+        sentinel_render_blocks("Test Report", [
+            {"type": "hero", "title": "Login Flow", "subtitle": "Regression test results"},
+            {"type": "test_results"},
+            {"type": "divider", "label": "Issues Found"},
+            {"type": "issue_card", "issue_id": "abc123"},
+            {"type": "context", "issue_id": "abc123"},
+            {"type": "callout", "style": "tip", "body": "Consider adding retry logic"}
+        ])
+    """
+    import tempfile, time, os
+    result = await _send_command("API_RENDER_BLOCKS", {"title": title, "blocks": blocks}, timeout=30.0)
+    html = result.get("html", "")
+    if not html:
+        return {"success": False, "error": result.get("error", "No HTML returned")}
+    if not output_path:
+        ts = int(time.time())
+        output_path = os.path.join(tempfile.gettempdir(), f"sentinel-report-{ts}.html")
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return {"path": output_path, "size": len(html)}
+
+
 # ── Extended AI Tools ──
 
 @mcp.tool()
@@ -897,7 +1019,7 @@ async def sentinel_list_sessions() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def sentinel_run_saved_session(name: str, speed: float = 1.0) -> dict[str, Any]:
+async def sentinel_run_saved_session(name: str, speed: float = 1.0, wait: bool = False) -> dict[str, Any]:
     """Load and replay a previously saved session in the active tab.
 
     Useful for regression testing — record a workflow once, replay it to verify nothing broke.
@@ -905,8 +1027,12 @@ async def sentinel_run_saved_session(name: str, speed: float = 1.0) -> dict[str,
     Args:
         name: Name of the session to replay
         speed: Playback speed multiplier (default 1.0; use 2.0 for faster replay)
+        wait: If True, block until playback completes and return full test results
+              (assertions, summary, step metrics). If False (default), return immediately
+              after starting playback. Use wait=True when building test run reports.
     """
-    return await _send_command("API_RUN_SAVED_SESSION", {"name": name, "speed": speed})
+    timeout = 330.0 if wait else 30.0
+    return await _send_command("API_RUN_SAVED_SESSION", {"name": name, "speed": speed, "wait": wait}, timeout=timeout)
 
 
 @mcp.tool()
@@ -1023,8 +1149,10 @@ async def sentinel_create_guide(steps: list[dict[str, str]], title: str = "Guide
     to a fresh URL will lose auth state and session context.
 
     Args:
-        steps: List of action dicts with keys: type, selector, and optionally value.
-               Example: [{"type": "click", "selector": "#login-btn"}, {"type": "input", "selector": "#search", "value": "hello"}]
+        steps: List of action dicts with keys: type, selector, and optionally value and description.
+               Example: [{"type": "click", "selector": "#login-btn", "description": "Click the Login button"},
+                         {"type": "input", "selector": "#search", "value": "hello", "description": "Type a search query"}]
+               The description field is optional but recommended — it becomes the step title in the exported guide.
         title: Guide title
         url: Optional starting URL. Only provide this when you explicitly want to navigate
              to a fresh page first. Leave empty to work on the current tab.
@@ -1040,7 +1168,7 @@ async def sentinel_create_guide(steps: list[dict[str, str]], title: str = "Guide
     # Execute each step — always stop recording even if an exception escapes
     results = []
     try:
-        for step in steps:
+        for i, step in enumerate(steps):
             try:
                 r = await _send_command("API_INJECT_ACTION", {
                     "type": step.get("type", "click"),
@@ -1048,6 +1176,13 @@ async def sentinel_create_guide(steps: list[dict[str, str]], title: str = "Guide
                     "value": step.get("value", ""),
                 })
                 results.append(r)
+                # Set step description if provided
+                desc = step.get("description", "")
+                if desc:
+                    try:
+                        await _send_command("API_SET_STEP_DESCRIPTION", {"index": i, "description": desc})
+                    except Exception:
+                        pass  # description is best-effort
                 await asyncio.sleep(0.3)  # Brief pause between actions
             except Exception as e:
                 results.append({"success": False, "error": str(e)})

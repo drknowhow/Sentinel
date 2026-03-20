@@ -1,56 +1,98 @@
-import type { Action, Message, Assertion, AssertionResult, PlaybackConfig, CapturedError, GuideEdits, GuideStepEdit, GuideSection, Issue, AiLogEntry } from './types';
+import type {
+  Action,
+  AiLogEntry,
+  Assertion,
+  AssertionResult,
+  CapturedError,
+  ExportOptions,
+  GuideEdits,
+  GuideSection,
+  GuideStepEdit,
+  Issue,
+  Message,
+  PlaybackConfig,
+  PlaybackRunSummary,
+  PlaybackState,
+  Session,
+} from './types';
 import { onMessage, sendToTab } from './lib/messages';
-import { saveIssue, deleteIssue, getIssues, updateIssue, analyzeIssues, analyzeSession } from './lib/storage';
-import { generateGuideHTML, generateIssueReportHTML, renderCustomGuide, renderCustomReport } from './lib/guideHtml';
+import {
+  analyzeIssues,
+  analyzeSession,
+  deleteIssue,
+  getActiveSession,
+  getIssues,
+  getSessions,
+  saveIssue,
+  saveSession,
+  setActiveSessionId,
+  updateIssue,
+  updateSessionRunStats,
+} from './lib/storage';
+import { generateGuideHTML, generateIssueReportHTML, renderBlockReport, renderCustomGuide, renderCustomReport } from './lib/guideHtml';
+import type { ReportBlock } from './lib/guideHtml';
 
 // ── AI Activity Log ──
 
 const MAX_LOG_ENTRIES = 60;
+const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+  profile: 'internal',
+  redactSelectors: false,
+  redactValues: false,
+  redactUrls: false,
+  includeDiagnostics: true,
+};
 
 function getCommandMeta(command: string, payload: Record<string, unknown>): { label: string; detail?: string } {
   switch (command) {
-    case 'API_GET_STATUS':           return { label: 'Check Status' };
-    case 'API_ATTACH':               return { label: 'Attach to Tab' };
-    case 'API_NAVIGATE':             return { label: 'Navigate', detail: payload.url as string };
-    case 'API_SCREENSHOT':           return { label: 'Screenshot' };
-    case 'API_START_RECORDING':      return { label: 'Start Recording' };
-    case 'API_STOP_RECORDING':       return { label: 'Stop Recording' };
-    case 'API_GET_SESSION':          return { label: 'Get Session' };
-    case 'API_INJECT_ACTION':        return { label: `Inject ${payload.type ?? 'action'}`, detail: payload.selector as string };
-    case 'API_GENERATE_GUIDE':       return { label: 'Generate Guide', detail: (payload.title as string) || undefined };
+    case 'API_GET_STATUS': return { label: 'Check Status' };
+    case 'API_ATTACH': return { label: 'Attach to Tab' };
+    case 'API_NAVIGATE': return { label: 'Navigate', detail: payload.url as string };
+    case 'API_SCREENSHOT': return { label: 'Screenshot' };
+    case 'API_START_RECORDING': return { label: 'Start Recording' };
+    case 'API_STOP_RECORDING': return { label: 'Stop Recording' };
+    case 'API_GET_SESSION': return { label: 'Get Session' };
+    case 'API_INJECT_ACTION': return { label: `Inject ${payload.type ?? 'action'}`, detail: payload.selector as string };
+    case 'API_GENERATE_GUIDE': return { label: 'Generate Guide', detail: (payload.title as string) || undefined };
+    case 'API_SET_GUIDE_EDITS': return { label: 'Set Guide Edits' };
     case 'API_START_ERROR_TRACKING': return { label: 'Start Error Tracking' };
-    case 'API_STOP_ERROR_TRACKING':  return { label: 'Stop Error Tracking' };
-    case 'API_GET_ERRORS':           return { label: 'Get Errors' };
-    case 'API_SAVE_ISSUE':           return { label: 'Save Issue', detail: payload.title as string };
-    case 'API_GET_ISSUES':           return { label: 'Get Issues' };
-    case 'API_GENERATE_REPORT':              return { label: 'Generate Report' };
-    case 'API_GENERATE_CUSTOM_GUIDE':        return { label: 'Custom Guide', detail: (payload.title as string) || undefined };
-    case 'API_GENERATE_CUSTOM_REPORT':       return { label: 'Custom Report', detail: (payload.title as string) || undefined };
-    case 'API_ANALYZE_ISSUES':               return { label: 'Analyze Issues' };
-    case 'API_GET_ISSUES_WITH_SCREENSHOTS':  return { label: 'Get Issues (full)' };
-    case 'API_UPDATE_ISSUE':                 return { label: 'Update Issue', detail: payload.id as string };
-    case 'API_ANALYZE_SESSION':              return { label: 'Analyze Session' };
+    case 'API_STOP_ERROR_TRACKING': return { label: 'Stop Error Tracking' };
+    case 'API_GET_ERRORS': return { label: 'Get Errors' };
+    case 'API_SAVE_ISSUE': return { label: 'Save Issue', detail: payload.title as string };
+    case 'API_GET_ISSUES': return { label: 'Get Issues' };
+    case 'API_GENERATE_REPORT': return { label: 'Generate Report' };
+    case 'API_GENERATE_CUSTOM_GUIDE': return { label: 'Custom Guide', detail: (payload.title as string) || undefined };
+    case 'API_GENERATE_CUSTOM_REPORT': return { label: 'Custom Report', detail: (payload.title as string) || undefined };
+    case 'API_ANALYZE_ISSUES': return { label: 'Analyze Issues' };
+    case 'API_GET_ISSUES_WITH_SCREENSHOTS': return { label: 'Get Issues (full)' };
+    case 'API_UPDATE_ISSUE': return { label: 'Update Issue', detail: payload.id as string };
+    case 'API_DELETE_ISSUE': return { label: 'Delete Issue', detail: payload.id as string };
+    case 'API_CLEAR_SESSION': return { label: 'Clear Session' };
+    case 'API_GET_TEST_RESULTS': return { label: 'Get Test Results' };
+    case 'API_GET_ISSUE_CONTEXT': return { label: 'Get Issue Context', detail: payload.id as string };
+    case 'API_RENDER_BLOCKS': return { label: 'Render Blocks', detail: `${(payload.blocks as unknown[])?.length ?? 0} blocks` };
+    case 'API_ANALYZE_SESSION': return { label: 'Analyze Session' };
     case 'API_GET_SESSION_WITH_SCREENSHOTS': return { label: 'Get Session (full)' };
-    case 'API_SET_STEP_DESCRIPTION':         return { label: 'Set Step Description', detail: payload.description as string };
-    case 'API_WAIT_FOR_ELEMENT':       return { label: 'Wait for Element', detail: payload.selector as string };
-    case 'API_EVALUATE_SELECTOR':      return { label: 'Evaluate Selector', detail: payload.selector as string };
-    case 'API_GET_PAGE_SNAPSHOT':      return { label: 'Page Snapshot' };
-    case 'API_FIND_ELEMENT':           return { label: 'Find Element', detail: (payload.text ?? payload.role) as string };
-    case 'API_GET_TEXT_CONTENT':       return { label: 'Get Text', detail: payload.selector as string };
-    case 'API_GET_ELEMENT_STATE':      return { label: 'Element State', detail: payload.selector as string };
-    case 'API_HOVER':                  return { label: 'Hover', detail: payload.selector as string };
-    case 'API_SELECT_OPTION':          return { label: 'Select Option', detail: payload.selector as string };
-    case 'API_KEY_SEQUENCE':           return { label: 'Key Sequence', detail: payload.keys as string };
-    case 'API_DRAG':                   return { label: 'Drag', detail: `${payload.source} → ${payload.target}` };
-    case 'API_WAIT_FOR_TEXT':          return { label: 'Wait for Text', detail: payload.text as string };
-    case 'API_GET_NETWORK_LOG':        return { label: 'Network Log' };
-    case 'API_WAIT_FOR_NETWORK_IDLE':  return { label: 'Wait Network Idle' };
-    case 'API_GET_CONSOLE_LOG':        return { label: 'Console Log' };
-    case 'API_SAVE_SESSION':           return { label: 'Save Session', detail: payload.name as string };
-    case 'API_LOAD_SESSION':           return { label: 'Load Session', detail: payload.name as string };
-    case 'API_LIST_SESSIONS':          return { label: 'List Sessions' };
-    case 'API_RUN_SAVED_SESSION':      return { label: 'Run Session', detail: payload.name as string };
-    default:                         return { label: command.replace(/^API_/, '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) };
+    case 'API_SET_STEP_DESCRIPTION': return { label: 'Set Step Description', detail: payload.description as string };
+    case 'API_WAIT_FOR_ELEMENT': return { label: 'Wait for Element', detail: payload.selector as string };
+    case 'API_EVALUATE_SELECTOR': return { label: 'Evaluate Selector', detail: payload.selector as string };
+    case 'API_GET_PAGE_SNAPSHOT': return { label: 'Page Snapshot' };
+    case 'API_FIND_ELEMENT': return { label: 'Find Element', detail: (payload.text ?? payload.role) as string };
+    case 'API_GET_TEXT_CONTENT': return { label: 'Get Text', detail: payload.selector as string };
+    case 'API_GET_ELEMENT_STATE': return { label: 'Element State', detail: payload.selector as string };
+    case 'API_HOVER': return { label: 'Hover', detail: payload.selector as string };
+    case 'API_SELECT_OPTION': return { label: 'Select Option', detail: payload.selector as string };
+    case 'API_KEY_SEQUENCE': return { label: 'Key Sequence', detail: payload.keys as string };
+    case 'API_DRAG': return { label: 'Drag', detail: `${payload.source} → ${payload.target}` };
+    case 'API_WAIT_FOR_TEXT': return { label: 'Wait for Text', detail: payload.text as string };
+    case 'API_GET_NETWORK_LOG': return { label: 'Network Log' };
+    case 'API_WAIT_FOR_NETWORK_IDLE': return { label: 'Wait Network Idle' };
+    case 'API_GET_CONSOLE_LOG': return { label: 'Console Log' };
+    case 'API_SAVE_SESSION': return { label: 'Save Session', detail: payload.name as string };
+    case 'API_LOAD_SESSION': return { label: 'Load Session', detail: payload.name as string };
+    case 'API_LIST_SESSIONS': return { label: 'List Sessions' };
+    case 'API_RUN_SAVED_SESSION': return { label: 'Run Session', detail: payload.name as string };
+    default: return { label: command.replace(/^API_/, '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) };
   }
 }
 
@@ -183,8 +225,8 @@ async function ensureContentScript(tabId: number): Promise<boolean> {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['src/content.js'] });
     // Re-sync recording/error-tracking state into the freshly injected script
     const stored = await chrome.storage.local.get(['isRecording', 'isErrorTracking']);
-    if (stored.isRecording) await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' }).catch(() => {});
-    if (stored.isErrorTracking) await chrome.tabs.sendMessage(tabId, { type: 'START_ERROR_TRACKING' }).catch(() => {});
+    if (stored.isRecording) await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' }).catch(() => { });
+    if (stored.isErrorTracking) await chrome.tabs.sendMessage(tabId, { type: 'START_ERROR_TRACKING' }).catch(() => { });
     return true;
   } catch {
     return false;
@@ -194,9 +236,9 @@ async function ensureContentScript(tabId: number): Promise<boolean> {
 async function updateContentScriptStatus() {
   const tab = await getActiveTab();
   if (!tab?.id) { chrome.storage.local.set({ contentScriptReady: false, activeTabUrl: null }); return; }
-  // Skip non-http pages (chrome://, about:, etc.)
+  // Skip non-injectable pages (chrome://, about:, etc.)
   const url = tab.url ?? '';
-  const injectable = url.startsWith('http://') || url.startsWith('https://');
+  const injectable = url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://');
   if (!injectable) { chrome.storage.local.set({ contentScriptReady: false, activeTabUrl: url }); return; }
   const alive = await pingTab(tab.id);
   chrome.storage.local.set({ contentScriptReady: alive, activeTabUrl: url });
@@ -213,7 +255,7 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
   try {
     switch (command) {
       case 'API_GET_STATUS': {
-        const result = await chrome.storage.local.get(['isRecording', 'isErrorTracking', 'currentSession', 'capturedErrors', 'projectName', 'projectPath', 'projectDevUrl']);
+        const result = await chrome.storage.local.get(['isRecording', 'isErrorTracking', 'currentSession', 'capturedErrors', 'projectName', 'projectPath', 'projectDevUrl', 'contentScriptReady']);
         const session = (result.currentSession as Action[]) || [];
         const errors = (result.capturedErrors as CapturedError[]) || [];
         const issues = await getIssues();
@@ -222,6 +264,7 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
         wsSend(id, true, {
           isRecording: result.isRecording ?? false,
           isErrorTracking: result.isErrorTracking ?? false,
+          isAttached: (result.contentScriptReady as boolean) ?? false,
           actionCount: session.length,
           errorCount: errors.length,
           issueCount: issues.length,
@@ -240,7 +283,7 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
         if (!tabId) { wsSend(id, false, undefined, 'No active tab'); break; }
         const tab = await chrome.tabs.get(tabId);
         const url = tab.url ?? '';
-        const injectable = url.startsWith('http://') || url.startsWith('https://');
+        const injectable = url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://');
         if (!injectable) { wsSend(id, false, undefined, `Cannot inject into: ${url}`); break; }
         const ok = await ensureContentScript(tabId);
         if (ok) {
@@ -270,6 +313,9 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
           // Timeout after 30s
           setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, 30000);
         });
+        // Re-inject content script after navigation (old page context is destroyed)
+        await ensureContentScript(tabId);
+        chrome.storage.local.set({ contentScriptReady: true, activeTabUrl: url });
         const tab = await chrome.tabs.get(tabId);
         wsSend(id, true, { url: tab.url, title: tab.title });
         break;
@@ -303,17 +349,24 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
 
       case 'API_GET_ISSUES': {
         const issues = await getIssues();
-        // Strip screenshots
-        const stripped = issues.map(({ screenshot, ...rest }) => rest);
+        // Strip screenshots and context (context fetched on-demand via API_GET_ISSUE_CONTEXT)
+        const stripped = issues.map(({ screenshot, context, ...rest }) => rest);
         wsSend(id, true, { issues: stripped });
         break;
       }
 
       case 'API_START_RECORDING': {
-        chrome.storage.local.set({ isRecording: true, currentSession: [] });
+        const append = (payload.append as boolean) ?? false;
+        const storageUpdate: Record<string, unknown> = { isRecording: true };
+        if (!append) storageUpdate.currentSession = [];
+        chrome.storage.local.set(storageUpdate);
         const tabId = await getActiveTabId();
-        if (tabId) sendToTab(tabId, 'START_RECORDING');
-        wsSend(id, true, { success: true });
+        if (tabId) {
+          await ensureContentScript(tabId);
+          chrome.storage.local.set({ contentScriptReady: true });
+          sendToTab(tabId, 'START_RECORDING');
+        }
+        wsSend(id, true, { success: true, append });
         break;
       }
 
@@ -330,7 +383,10 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
       case 'API_START_ERROR_TRACKING': {
         chrome.storage.local.set({ isErrorTracking: true, capturedErrors: [] });
         const tabId = await getActiveTabId();
-        if (tabId) sendToTab(tabId, 'START_ERROR_TRACKING');
+        if (tabId) {
+          await ensureContentScript(tabId);
+          sendToTab(tabId, 'START_ERROR_TRACKING');
+        }
         wsSend(id, true, { success: true });
         break;
       }
@@ -347,6 +403,8 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
         const tabId = await getActiveTabId();
         const tab = tabId ? await chrome.tabs.get(tabId) : null;
         const screenshot = await captureScreenshot();
+        const currentState = await chrome.storage.local.get('currentSession');
+        const currentSession = (currentState.currentSession as Action[]) || [];
         // Capture runtime context snapshot at save time (best-effort)
         let context: Issue['context'] | undefined;
         if (tabId) {
@@ -356,14 +414,26 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
               chrome.tabs.sendMessage(tabId, { type: 'API_GET_CONSOLE_LOG', payload: {} }),
             ]);
             const errResult = await chrome.storage.local.get('capturedErrors');
-            const networkLog = netResp.status === 'fulfilled' ? (netResp.value?.log ?? []).slice(-20) : undefined;
-            const consoleLog = conResp.status === 'fulfilled' ? (conResp.value?.log ?? []).slice(-30) : undefined;
+            const networkLog = netResp.status === 'fulfilled' ? (netResp.value?.entries ?? []).slice(-20) : undefined;
+            const consoleLog = conResp.status === 'fulfilled' ? (conResp.value?.entries ?? []).slice(-30) : undefined;
             const capturedErrors = (errResult.capturedErrors as CapturedError[]) || undefined;
             if (networkLog?.length || consoleLog?.length || capturedErrors?.length) {
               context = { networkLog, consoleLog, capturedErrors };
             }
           } catch { /* context capture is best-effort */ }
         }
+        const activeUrl = tab?.url || '';
+        const correlatedStepIndices = currentSession
+          .map((action, index) => ({ action, index }))
+          .filter(({ action }) => {
+            const selectorMatch = Boolean(payload.selector) && action.selector === payload.selector;
+            const urlMatch = Boolean(activeUrl) && action.url === activeUrl;
+            const titleText = String(payload.title || '').toLowerCase();
+            const descMatch = titleText && (action.description || '').toLowerCase().includes(titleText.slice(0, 24));
+            return selectorMatch || (urlMatch && descMatch);
+          })
+          .map(item => item.index)
+          .slice(0, 5);
         const issue = await saveIssue({
           type: (payload.type as Issue['type']) || 'bug',
           title: (payload.title as string) || 'Untitled Issue',
@@ -373,6 +443,7 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
           pageUrl: tab?.url || '',
           screenshot: screenshot ?? undefined,
           context,
+          correlatedStepIndices,
         });
         wsSend(id, true, { success: true, id: issue.id });
         break;
@@ -385,9 +456,17 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
       }
 
       case 'API_GENERATE_GUIDE': {
-        const gr = await chrome.storage.local.get(['currentSession', 'pendingGuideEdits']);
+        const gr = await chrome.storage.local.get(['currentSession', 'pendingGuideEdits', 'sentinel_active_session_id']);
         const session = (gr.currentSession as Action[]) || [];
         const stored = (gr.pendingGuideEdits as Partial<GuideEdits>) || {};
+        const activeSessionId = (gr.sentinel_active_session_id as string | null) || null;
+        const activeSession = activeSessionId ? await getActiveSession() : null;
+        const exportOptions: ExportOptions = {
+          ...DEFAULT_EXPORT_OPTIONS,
+          ...(activeSession?.exportOptions || {}),
+          ...(stored.exportOptions || {}),
+          ...((payload.exportOptions as ExportOptions | undefined) || {}),
+        };
         const hasPayload = payload.title || payload.intro || payload.conclusion || payload.stepsJson || payload.sectionsJson;
         let edits: GuideEdits | undefined;
         if (hasPayload || stored.guideTitle || stored.introText || stored.sections?.length) {
@@ -397,9 +476,9 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
           // Merge stored step edits on top of base (by originalIndex)
           const mergedSteps = stored.steps
             ? baseSteps.map(b => {
-                const override = stored.steps!.find(s => s.originalIndex === b.originalIndex);
-                return override ? { ...b, ...override } : b;
-              })
+              const override = stored.steps!.find(s => s.originalIndex === b.originalIndex);
+              return override ? { ...b, ...override } : b;
+            })
             : baseSteps;
           const parsedSteps = payload.stepsJson
             ? (JSON.parse(payload.stepsJson as string) as GuideStepEdit[])
@@ -413,9 +492,10 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
             conclusionText: (payload.conclusion as string) || stored.conclusionText || '',
             steps: parsedSteps,
             sections: parsedSections,
+            exportOptions,
           };
         }
-        const html = generateGuideHTML(session, edits);
+        const html = generateGuideHTML(session, edits || { guideTitle: '', introText: '', conclusionText: '', steps: session.map((_, index) => ({ originalIndex: index, title: '', notes: '', includeScreenshot: true, included: true })), exportOptions });
         // Clear pending edits after use
         chrome.storage.local.remove('pendingGuideEdits');
         wsSend(id, true, { html });
@@ -424,7 +504,10 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
 
       case 'API_GENERATE_REPORT': {
         const issues = await getIssues();
-        const html = generateIssueReportHTML(issues);
+        const actionResult = await chrome.storage.local.get('currentSession');
+        const currentSession = (actionResult.currentSession as Action[]) || [];
+        const analysis = analyzeIssues(issues, currentSession);
+        const html = generateIssueReportHTML(issues, analysis);
         wsSend(id, true, { html });
         break;
       }
@@ -456,7 +539,11 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
               value: (payload.value as string) || undefined,
               description: (response.description as string) || actionType,
               timestamp: Date.now(),
+              url: (response.url as string) || undefined,
               screenshot: screenshot ?? undefined,
+              selectorCandidates: (response.selectorCandidates as Action['selectorCandidates']) || undefined,
+              selectorConfidence: (response.selectorConfidence as number) || undefined,
+              targetSnapshot: (response.targetSnapshot as Action['targetSnapshot']) || undefined,
             });
             await chrome.storage.local.set({ currentSession: session });
           }
@@ -497,31 +584,48 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
       case 'API_SAVE_SESSION': {
         const name = payload.name as string;
         if (!name) { wsSend(id, false, undefined, 'Missing name'); break; }
-        const sr = await chrome.storage.local.get(['currentSession', 'savedSessions']);
+        const sr = await chrome.storage.local.get(['currentSession', 'currentAssertions', 'currentGuideEdits']);
         const session = (sr.currentSession as Action[]) || [];
-        const savedSessions = (sr.savedSessions as Record<string, { actions: Action[]; savedAt: number }>) || {};
-        savedSessions[name] = { actions: session, savedAt: Date.now() };
-        await chrome.storage.local.set({ savedSessions });
-        wsSend(id, true, { name, actionCount: session.length });
+        const assertions = (sr.currentAssertions as Assertion[]) || [];
+        const guideEdits = (sr.currentGuideEdits as GuideEdits | null) || undefined;
+        const saved = await saveSession({
+          name,
+          actions: session,
+          assertions,
+          guideEdits,
+          kind: (payload.kind as Session['kind']) || 'suite',
+          tags: (payload.tags as string[] | undefined) || [],
+        });
+        await setActiveSessionId(saved.id);
+        wsSend(id, true, { name: saved.name, actionCount: saved.actions.length, id: saved.id });
         break;
       }
 
       case 'API_LOAD_SESSION': {
         const name = payload.name as string;
         if (!name) { wsSend(id, false, undefined, 'Missing name'); break; }
-        const lr = await chrome.storage.local.get('savedSessions');
-        const ss = (lr.savedSessions as Record<string, { actions: Action[]; savedAt: number }>) || {};
-        const saved = ss[name];
+        const sessions = await getSessions();
+        const saved = sessions.find(session => session.name === name);
         if (!saved) { wsSend(id, false, undefined, `Session not found: ${name}`); break; }
-        await chrome.storage.local.set({ currentSession: saved.actions });
-        wsSend(id, true, { name, actionCount: saved.actions.length, savedAt: saved.savedAt });
+        await chrome.storage.local.set({
+          currentSession: saved.actions,
+          currentAssertions: saved.assertions,
+          currentGuideEdits: saved.guideEdits ?? null,
+        });
+        await setActiveSessionId(saved.id);
+        wsSend(id, true, { name, actionCount: saved.actions.length, savedAt: saved.updatedAt, id: saved.id });
         break;
       }
 
       case 'API_LIST_SESSIONS': {
-        const lsr = await chrome.storage.local.get('savedSessions');
-        const allSessions = (lsr.savedSessions as Record<string, { actions: Action[]; savedAt: number }>) || {};
-        const sessions = Object.entries(allSessions).map(([n, s]) => ({ name: n, actionCount: s.actions.length, savedAt: s.savedAt }));
+        const sessions = (await getSessions()).map(session => ({
+          id: session.id,
+          name: session.name,
+          kind: session.kind || 'recording',
+          actionCount: session.actions.length,
+          savedAt: session.updatedAt,
+          flakyScore: session.runStats?.flakyScore ?? 0,
+        }));
         wsSend(id, true, { sessions });
         break;
       }
@@ -529,16 +633,61 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
       case 'API_RUN_SAVED_SESSION': {
         const name = payload.name as string;
         const speed = (payload.speed as number) || 1;
+        const waitForCompletion = (payload.wait as boolean) ?? false;
         if (!name) { wsSend(id, false, undefined, 'Missing name'); break; }
-        const rsr = await chrome.storage.local.get('savedSessions');
-        const rss = (rsr.savedSessions as Record<string, { actions: Action[]; savedAt: number }>) || {};
-        const rsaved = rss[name];
+        const sessions = await getSessions();
+        const rsaved = sessions.find(session => session.name === name);
         if (!rsaved) { wsSend(id, false, undefined, `Session not found: ${name}`); break; }
-        await chrome.storage.local.set({ currentSession: rsaved.actions });
+        await chrome.storage.local.set({
+          currentSession: rsaved.actions,
+          currentAssertions: rsaved.assertions,
+          currentGuideEdits: rsaved.guideEdits ?? null,
+        });
+        await setActiveSessionId(rsaved.id);
         const rTabId = await getActiveTabId();
         if (!rTabId) { wsSend(id, false, undefined, 'No active tab'); break; }
-        sendToTab(rTabId, 'START_PLAYBACK', { session: rsaved.actions, assertions: [], speed, stepByStep: false });
-        wsSend(id, true, { name, actionCount: rsaved.actions.length, status: 'playing' });
+        await ensureContentScript(rTabId);
+        sendToTab(rTabId, 'START_PLAYBACK', { session: rsaved.actions, assertions: rsaved.assertions, speed, stepByStep: false });
+        await chrome.storage.local.set({
+          playbackState: {
+            isPlaying: true,
+            isPaused: false,
+            currentStep: 0,
+            totalSteps: rsaved.actions.length,
+            speed,
+            stepByStep: false,
+            runId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          },
+          lastPlaybackSessionId: rsaved.id,
+          assertionResults: [],
+          lastPlaybackSummary: null,
+        });
+
+        if (waitForCompletion) {
+          // Poll until playback completes (max 5 min)
+          const maxWait = 300_000;
+          const pollInterval = 500;
+          const start = Date.now();
+          await new Promise<void>((resolve) => {
+            const check = () => {
+              chrome.storage.local.get('playbackState', (r) => {
+                const ps = r.playbackState as PlaybackState | undefined;
+                if (!ps?.isPlaying || Date.now() - start > maxWait) {
+                  resolve();
+                } else {
+                  setTimeout(check, pollInterval);
+                }
+              });
+            };
+            setTimeout(check, pollInterval);
+          });
+          const tr = await chrome.storage.local.get(['assertionResults', 'lastPlaybackSummary']);
+          const results = (tr.assertionResults as AssertionResult[]) || [];
+          const summary = (tr.lastPlaybackSummary as PlaybackRunSummary) || null;
+          wsSend(id, true, { name, actionCount: rsaved.actions.length, status: 'completed', id: rsaved.id, results, summary });
+        } else {
+          wsSend(id, true, { name, actionCount: rsaved.actions.length, status: 'playing', id: rsaved.id });
+        }
         break;
       }
 
@@ -575,7 +724,8 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
 
       case 'API_ANALYZE_ISSUES': {
         const issues = await getIssues();
-        const analysis = analyzeIssues(issues);
+        const actionResult = await chrome.storage.local.get('currentSession');
+        const analysis = analyzeIssues(issues, (actionResult.currentSession as Action[]) || []);
         wsSend(id, true, { analysis });
         break;
       }
@@ -593,6 +743,49 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
         if (!issueId) { wsSend(id, false, undefined, 'Missing issue id'); break; }
         await updateIssue(issueId, updates);
         wsSend(id, true, { success: true });
+        break;
+      }
+
+      case 'API_DELETE_ISSUE': {
+        const issueId = payload.id as string;
+        if (!issueId) { wsSend(id, false, undefined, 'Missing issue id'); break; }
+        await deleteIssue(issueId);
+        wsSend(id, true, { success: true });
+        break;
+      }
+
+      case 'API_CLEAR_SESSION': {
+        chrome.storage.local.set({
+          currentSession: [],
+          currentGuideEdits: null,
+          capturedErrors: [],
+          currentAssertions: [],
+          sentinel_issues: [],
+        });
+        wsSend(id, true, { success: true });
+        break;
+      }
+
+      case 'API_GET_TEST_RESULTS': {
+        const tr = await chrome.storage.local.get(['assertionResults', 'lastPlaybackSummary', 'lastPlaybackSessionId']);
+        const results = (tr.assertionResults as AssertionResult[]) || [];
+        const summary = (tr.lastPlaybackSummary as PlaybackRunSummary) || null;
+        const sessionId = (tr.lastPlaybackSessionId as string) || null;
+        wsSend(id, true, { results, summary, sessionId });
+        break;
+      }
+
+      case 'API_GET_ISSUE_CONTEXT': {
+        const ctxId = payload.id as string;
+        if (!ctxId) { wsSend(id, false, undefined, 'Missing issue id'); break; }
+        const allIssues = await getIssues();
+        const issue = allIssues.find(i => i.id === ctxId);
+        if (!issue) { wsSend(id, false, undefined, `Issue not found: ${ctxId}`); break; }
+        wsSend(id, true, {
+          id: ctxId,
+          context: issue.context ?? null,
+          capturedError: issue.capturedError ?? null,
+        });
         break;
       }
 
@@ -619,6 +812,25 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
         const issueScreenshots: Record<string, string> = {};
         issueList.forEach(issue => { if (issue.screenshot) issueScreenshots[issue.id] = issue.screenshot; });
         const html = renderCustomReport(body, title, issueScreenshots);
+        wsSend(id, true, { html });
+        break;
+      }
+
+      case 'API_RENDER_BLOCKS': {
+        const rbTitle = (payload.title as string) || 'Sentinel Report';
+        const blocks = (payload.blocks as ReportBlock[]) || [];
+        if (blocks.length === 0) { wsSend(id, false, undefined, 'No blocks provided'); break; }
+        const rbData = await chrome.storage.local.get(['currentSession', 'assertionResults', 'lastPlaybackSummary']);
+        const rbIssues = await getIssues();
+        const rbActions = (rbData.currentSession as Action[]) || [];
+        const rbTestResults = (rbData.assertionResults as AssertionResult[]) || [];
+        const rbTestSummary = (rbData.lastPlaybackSummary as PlaybackRunSummary) || null;
+        const html = renderBlockReport(rbTitle, blocks, {
+          issues: rbIssues,
+          actions: rbActions,
+          testResults: rbTestResults,
+          testSummary: rbTestSummary,
+        });
         wsSend(id, true, { html });
         break;
       }
@@ -741,15 +953,24 @@ onMessage((message: Message, _sender, sendResponse) => {
 
   switch (type) {
     case 'TOGGLE_RECORDING': {
-      const { active } = payload as { active: boolean };
+      const { active, clearSession: shouldClear } = payload as { active: boolean; clearSession?: boolean };
       chrome.storage.local.set({ isRecording: active });
 
-      if (active) {
+      if (active && shouldClear !== false) {
         chrome.storage.local.set({ currentSession: [] });
       }
 
-      getActiveTabId().then(tabId => {
-        if (tabId) sendToTab(tabId, active ? 'START_RECORDING' : 'STOP_RECORDING');
+      getActiveTabId().then(async tabId => {
+        if (!tabId) return;
+        if (active) {
+          const ok = await ensureContentScript(tabId);
+          if (ok) {
+            chrome.storage.local.set({ contentScriptReady: true });
+            sendToTab(tabId, 'START_RECORDING');
+          }
+        } else {
+          sendToTab(tabId, 'STOP_RECORDING');
+        }
       });
       sendResponse({ status: 'success' });
       break;
@@ -764,7 +985,11 @@ onMessage((message: Message, _sender, sendResponse) => {
         (shouldScreenshot ? captureScreenshot() : Promise.resolve(null)).then(screenshot => {
           chrome.storage.local.get(['currentSession'], (result) => {
             const session = (result.currentSession as Action[]) || [];
-            session.push({ ...action, screenshot: screenshot ?? undefined });
+            session.push({
+              ...action,
+              url: action.url || undefined,
+              screenshot: screenshot ?? undefined,
+            });
             chrome.storage.local.set({ currentSession: session });
           });
         });
@@ -775,13 +1000,15 @@ onMessage((message: Message, _sender, sendResponse) => {
     case 'START_PLAYBACK': {
       const config = (payload as PlaybackConfig) || { speed: 1, stepByStep: false };
 
-      chrome.storage.local.get(['currentSession', 'currentAssertions', 'preferredSpeed', 'preferredStepByStep'], (result) => {
+      chrome.storage.local.get(['currentSession', 'currentAssertions', 'preferredSpeed', 'preferredStepByStep', 'sentinel_active_session_id'], async (result) => {
         const session = (result.currentSession as Action[]) || [];
         const assertions = (result.currentAssertions as Assertion[]) || [];
         const speed = config.speed || (result.preferredSpeed as number) || 1;
         const stepByStep = config.stepByStep || (result.preferredStepByStep as boolean) || false;
+        const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const activeSessionId = config.sessionId ?? (result.sentinel_active_session_id as string | null) ?? null;
 
-        chrome.storage.local.set({
+        await chrome.storage.local.set({
           playbackState: {
             isPlaying: true,
             isPaused: false,
@@ -789,12 +1016,16 @@ onMessage((message: Message, _sender, sendResponse) => {
             totalSteps: session.length,
             speed,
             stepByStep,
+            runId,
           },
           assertionResults: [],
+          lastPlaybackSummary: null,
+          lastPlaybackSessionId: activeSessionId,
         });
 
-        getActiveTabId().then(tabId => {
+        getActiveTabId().then(async tabId => {
           if (tabId) {
+            await ensureContentScript(tabId);
             sendToTab(tabId, 'START_PLAYBACK', { session, assertions, speed, stepByStep });
           }
         });
@@ -838,9 +1069,16 @@ onMessage((message: Message, _sender, sendResponse) => {
     }
 
     case 'PLAYBACK_COMPLETE': {
-      const results = (payload as { results?: AssertionResult[] })?.results;
+      const { results, summary } = (payload as { results?: AssertionResult[]; summary?: PlaybackRunSummary }) || {};
+      chrome.storage.local.get('lastPlaybackSessionId', async result => {
+        const lastPlaybackSessionId = (result.lastPlaybackSessionId as string | null) || null;
+        if (lastPlaybackSessionId && summary) {
+          await updateSessionRunStats(lastPlaybackSessionId, summary);
+        }
+      });
       chrome.storage.local.set({
         playbackState: null,
+        ...(summary ? { lastPlaybackSummary: summary } : {}),
         ...(results ? { assertionResults: results } : {}),
       });
       break;
@@ -858,7 +1096,7 @@ onMessage((message: Message, _sender, sendResponse) => {
     case 'ELEMENT_SELECTED': {
       // Re-broadcast to all extension pages (side panel) since the background
       // returning true on the listener claims the message channel
-      chrome.runtime.sendMessage(message).catch(() => {});
+      chrome.runtime.sendMessage(message).catch(() => { });
       break;
     }
 
@@ -866,8 +1104,11 @@ onMessage((message: Message, _sender, sendResponse) => {
 
     case 'START_ERROR_TRACKING': {
       chrome.storage.local.set({ isErrorTracking: true, capturedErrors: [] });
-      getActiveTabId().then(tabId => {
-        if (tabId) sendToTab(tabId, 'START_ERROR_TRACKING');
+      getActiveTabId().then(async tabId => {
+        if (tabId) {
+          await ensureContentScript(tabId);
+          sendToTab(tabId, 'START_ERROR_TRACKING');
+        }
       });
       break;
     }
@@ -884,7 +1125,58 @@ onMessage((message: Message, _sender, sendResponse) => {
       const error = payload as CapturedError;
       chrome.storage.local.get(['capturedErrors'], (result) => {
         const errors = (result.capturedErrors as CapturedError[]) || [];
-        errors.push(error);
+        // Deduplicate: find an existing error with the same source + message
+        const existingIdx = errors.findIndex(
+          e => e.source === error.source && e.message === error.message
+        );
+        if (existingIdx >= 0) {
+          // Increment count and update timestamp
+          const updatedError = {
+            ...errors[existingIdx],
+            count: (errors[existingIdx].count || 1) + 1,
+            timestamp: error.timestamp,
+          };
+          errors[existingIdx] = updatedError;
+
+          // Propagate updated count to the auto-created Issue
+          chrome.storage.local.get(['issues'], (res) => {
+            const issues = (res.issues as Issue[]) || [];
+            let updated = false;
+            for (let i = 0; i < issues.length; i++) {
+              if (
+                issues[i].capturedError?.source === error.source &&
+                issues[i].capturedError?.message === error.message
+              ) {
+                issues[i].capturedError = updatedError;
+                updated = true;
+              }
+            }
+            if (updated) {
+              chrome.storage.local.set({ issues });
+            }
+          });
+        } else {
+          errors.push({ ...error, count: 1 });
+          // Auto-create an Issue for each new unique error
+          const severityMap: Record<string, 'critical' | 'high' | 'medium' | 'low'> = {
+            'unhandled-exception': 'high',
+            'unhandled-rejection': 'high',
+            'network-error': 'medium',
+            'console-error': 'medium',
+            'csp-violation': 'low',
+          };
+          getActiveTab().then(tab => {
+            saveIssue({
+              type: 'bug',
+              title: error.message.slice(0, 120),
+              notes: `Auto-captured ${error.source.replace(/-/g, ' ')}` +
+                (error.stack ? `\n\nStack trace:\n${error.stack.slice(0, 500)}` : ''),
+              pageUrl: tab?.url || error.url || 'unknown',
+              severity: severityMap[error.source] || 'medium',
+              capturedError: error,
+            });
+          });
+        }
         chrome.storage.local.set({ capturedErrors: errors });
       });
       break;
@@ -908,8 +1200,9 @@ onMessage((message: Message, _sender, sendResponse) => {
     }
 
     case 'EXPORT_ISSUES': {
-      getIssues().then(issues => {
-        const htmlContent = generateIssueReportHTML(issues);
+      Promise.all([getIssues(), chrome.storage.local.get('currentSession')]).then(([issues, result]) => {
+        const currentSession = (result.currentSession as Action[]) || [];
+        const htmlContent = generateIssueReportHTML(issues, analyzeIssues(issues, currentSession));
         const blob = new Blob([htmlContent], { type: 'text/html' });
         const reader = new FileReader();
         reader.onload = function () {
@@ -946,9 +1239,18 @@ onMessage((message: Message, _sender, sendResponse) => {
     case 'EXPORT_EDITED_GUIDE': {
       const { edits } = payload as { edits: GuideEdits };
       // Read actions from storage (not from the message) to preserve screenshot data URLs
-      chrome.storage.local.get(['currentSession'], (result) => {
+      chrome.storage.local.get(['currentSession', 'sentinel_active_session_id'], async result => {
         const actions = (result.currentSession as Action[]) || [];
-        const htmlContent = generateGuideHTML(actions, edits);
+        const activeSessionId = (result.sentinel_active_session_id as string | null) || null;
+        const activeSession = activeSessionId ? await getActiveSession() : null;
+        const htmlContent = generateGuideHTML(actions, {
+          ...edits,
+          exportOptions: {
+            ...DEFAULT_EXPORT_OPTIONS,
+            ...(activeSession?.exportOptions || {}),
+            ...(edits.exportOptions || {}),
+          },
+        });
         const blob = new Blob([htmlContent], { type: 'text/html' });
         const reader = new FileReader();
         reader.onload = function () {
@@ -985,13 +1287,13 @@ onMessage((message: Message, _sender, sendResponse) => {
     case 'INSTALL_LOCAL_MCP':
     case 'REMOVE_LOCAL_MCP':
     case 'FORCE_RESTART_MCP': {
-      const cmd = type === 'LAUNCH_MCP_SERVER'  ? 'start'
-                : type === 'STOP_MCP_SERVER'    ? 'stop'
-                : type === 'REMOVE_MCP_LAUNCHER'? 'uninstall'
-                : type === 'INSTALL_LOCAL_MCP'  ? 'install_local'
-                : type === 'REMOVE_LOCAL_MCP'   ? 'remove_local'
-                : type === 'FORCE_RESTART_MCP'  ? 'force_restart'
-                :                                 'status';
+      const cmd = type === 'LAUNCH_MCP_SERVER' ? 'start'
+        : type === 'STOP_MCP_SERVER' ? 'stop'
+          : type === 'REMOVE_MCP_LAUNCHER' ? 'uninstall'
+            : type === 'INSTALL_LOCAL_MCP' ? 'install_local'
+              : type === 'REMOVE_LOCAL_MCP' ? 'remove_local'
+                : type === 'FORCE_RESTART_MCP' ? 'force_restart'
+                  : 'status';
       const nativePayload = (type === 'INSTALL_LOCAL_MCP' || type === 'REMOVE_LOCAL_MCP')
         ? { command: cmd, payload: { project_path: (payload as Record<string, string>).projectPath } }
         : { command: cmd };
@@ -1010,9 +1312,28 @@ onMessage((message: Message, _sender, sendResponse) => {
     }
 
     case 'EXPORT_GUIDE': {
-      chrome.storage.local.get(['currentSession'], (result) => {
+      chrome.storage.local.get(['currentSession', 'sentinel_active_session_id'], async result => {
         const session = (result.currentSession as Action[]) || [];
-        const htmlContent = generateGuideHTML(session);
+        const activeSessionId = (result.sentinel_active_session_id as string | null) || null;
+        const activeSession = activeSessionId ? await getActiveSession() : null;
+        const htmlContent = generateGuideHTML(session, {
+          guideTitle: activeSession?.guideEdits?.guideTitle || 'Sentinel Visual Guide',
+          introText: activeSession?.guideEdits?.introText || '',
+          conclusionText: activeSession?.guideEdits?.conclusionText || '',
+          steps: activeSession?.guideEdits?.steps || session.map((_, index) => ({
+            originalIndex: index,
+            title: '',
+            notes: '',
+            includeScreenshot: true,
+            included: true,
+          })),
+          sections: activeSession?.guideEdits?.sections || [],
+          exportOptions: {
+            ...DEFAULT_EXPORT_OPTIONS,
+            ...(activeSession?.exportOptions || {}),
+            ...(activeSession?.guideEdits?.exportOptions || {}),
+          },
+        });
         const blob = new Blob([htmlContent], { type: 'text/html' });
         const reader = new FileReader();
         reader.onload = function () {
@@ -1032,4 +1353,3 @@ onMessage((message: Message, _sender, sendResponse) => {
 
   return true; // keep channel open for async responses
 });
-

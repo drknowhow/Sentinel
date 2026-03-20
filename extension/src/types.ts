@@ -1,4 +1,31 @@
-// ── Core Action Types ──
+// Core action and selector metadata
+
+export type SelectorStrategy =
+  | 'id'
+  | 'data-testid'
+  | 'aria-label'
+  | 'name'
+  | 'role-text'
+  | 'text'
+  | 'path'
+  | 'tag';
+
+export interface SelectorCandidate {
+  selector: string;
+  strategy: SelectorStrategy;
+  score: number;
+}
+
+export interface TargetSnapshot {
+  tag: string;
+  role?: string;
+  text?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  name?: string;
+  type?: string;
+  className?: string;
+}
 
 export interface Action {
   type: string;
@@ -8,9 +35,12 @@ export interface Action {
   screenshot?: string;
   url?: string;
   description?: string;
+  selectorCandidates?: SelectorCandidate[];
+  selectorConfidence?: number;
+  targetSnapshot?: TargetSnapshot;
 }
 
-// ── Guide Analysis ──
+// Guide analysis
 
 export interface GuideStep {
   index: number;
@@ -48,9 +78,64 @@ export interface GuideAnalysis {
   hasMultiPageFlow: boolean;
   recommendedTitle: string;
   suggestedIntro: string;
+  averageSelectorConfidence: number;
+  resilientSelectorCoverage: number;
 }
 
-// ── Session Management ──
+// Export configuration
+
+export type ExportProfile = 'internal' | 'client';
+
+export interface ExportOptions {
+  profile: ExportProfile;
+  redactSelectors: boolean;
+  redactValues: boolean;
+  redactUrls: boolean;
+  includeDiagnostics: boolean;
+}
+
+// Playback / run metrics
+
+export type PlaybackResolution = 'primary' | 'candidate' | 'heuristic' | 'failed';
+
+export interface PlaybackStepMetric {
+  index: number;
+  selector: string;
+  resolvedSelector?: string;
+  resolution: PlaybackResolution;
+  selectorConfidence?: number;
+  attempts: number;
+  durationMs: number;
+  warning?: string;
+  url?: string;
+}
+
+export interface PlaybackRunSummary {
+  startedAt: number;
+  completedAt: number;
+  totalSteps: number;
+  completedSteps: number;
+  recoveredSteps: number;
+  failedSteps: number;
+  averageConfidence: number;
+  assertionPassCount: number;
+  assertionFailCount: number;
+  flaky: boolean;
+  stepMetrics: PlaybackStepMetric[];
+}
+
+// Session management
+
+export type SessionKind = 'recording' | 'suite';
+
+export interface SessionRunStats {
+  runCount: number;
+  passCount: number;
+  failCount: number;
+  flakyScore: number;
+  lastRunAt?: number;
+  lastRunSummary?: PlaybackRunSummary;
+}
 
 export interface Session {
   id: string;
@@ -58,11 +143,15 @@ export interface Session {
   actions: Action[];
   assertions: Assertion[];
   guideEdits?: GuideEdits;
+  kind?: SessionKind;
+  tags?: string[];
+  exportOptions?: ExportOptions;
+  runStats?: SessionRunStats;
   createdAt: number;
   updatedAt: number;
 }
 
-// ── Guide Editor ──
+// Guide editor
 
 export interface GuideStepEdit {
   originalIndex: number;
@@ -77,7 +166,7 @@ export type GuideSectionType = 'note' | 'warning' | 'tip' | 'heading' | 'html';
 export interface GuideSection {
   type: GuideSectionType;
   content: string;
-  afterStep: number; // -1 = before all steps, 0 = after step 0, N = after step N
+  afterStep: number;
 }
 
 export interface GuideEdits {
@@ -86,9 +175,10 @@ export interface GuideEdits {
   conclusionText: string;
   steps: GuideStepEdit[];
   sections?: GuideSection[];
+  exportOptions?: ExportOptions;
 }
 
-// ── Message Bus ──
+// Message bus
 
 export type MessageType =
   | 'TOGGLE_RECORDING'
@@ -116,10 +206,8 @@ export type MessageType =
   | 'START_FEATURE_INSPECTION'
   | 'EXPORT_EDITED_GUIDE'
   | 'GET_TAB_CAPTURE_STREAM_ID'
-  // ── MCP WebSocket bridge control ──
   | 'WS_GET_STATUS'
   | 'WS_RECONNECT'
-  // ── MCP Launcher (native messaging) ──
   | 'LAUNCH_MCP_SERVER'
   | 'STOP_MCP_SERVER'
   | 'MCP_LAUNCHER_STATUS'
@@ -128,7 +216,6 @@ export type MessageType =
   | 'REMOVE_LOCAL_MCP'
   | 'FORCE_RESTART_MCP'
   | 'PING'
-  // ── API (MCP WebSocket bridge) ──
   | 'API_ATTACH'
   | 'API_NAVIGATE'
   | 'API_SCREENSHOT'
@@ -149,7 +236,6 @@ export type MessageType =
   | 'API_GET_STATUS'
   | 'API_WAIT_FOR_ELEMENT'
   | 'API_EVALUATE_SELECTOR'
-  // ── Extended AI Tools ──
   | 'API_GET_PAGE_SNAPSHOT'
   | 'API_FIND_ELEMENT'
   | 'API_GET_TEXT_CONTENT'
@@ -173,11 +259,12 @@ export interface Message<T = unknown> {
   payload?: T;
 }
 
-// ── Playback ──
+// Playback
 
 export interface PlaybackConfig {
   speed: number;
   stepByStep: boolean;
+  sessionId?: string | null;
 }
 
 export interface PlaybackState {
@@ -187,9 +274,10 @@ export interface PlaybackState {
   totalSteps: number;
   speed: number;
   stepByStep: boolean;
+  runId?: string;
 }
 
-// ── Assertions ──
+// Assertions
 
 export type AssertionType =
   | 'visible'
@@ -197,14 +285,24 @@ export type AssertionType =
   | 'text-contains'
   | 'text-equals'
   | 'has-class'
-  | 'exists';
+  | 'exists'
+  | 'value-equals'
+  | 'attribute-equals'
+  | 'url-contains'
+  | 'url-equals'
+  | 'checked'
+  | 'unchecked'
+  | 'network-idle';
 
 export interface Assertion {
   id: string;
   selector: string;
   type: AssertionType;
   expected?: string;
+  attributeName?: string;
   afterStep: number;
+  retryMs?: number;
+  retryIntervalMs?: number;
 }
 
 export interface AssertionResult {
@@ -212,27 +310,28 @@ export interface AssertionResult {
   passed: boolean;
   actual?: string;
   error?: string;
+  attempts?: number;
+  durationMs?: number;
 }
 
-// ── AI Activity Log ──
+// AI activity log
 
 export interface AiLogEntry {
   id: string;
-  timestamp: number;       // ms since epoch (start of command)
-  command: string;         // raw API_* command name
-  label: string;           // human-readable label
-  detail?: string;         // key param (URL, selector, title…)
+  timestamp: number;
+  command: string;
+  label: string;
+  detail?: string;
   status: 'success' | 'error';
   durationMs: number;
   error?: string;
 }
 
-// ── Issue Tracking ──
+// Issue tracking
 
 export type IssueSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type IssueType = 'bug' | 'feature-request';
 
-// Capture-time context snapshot attached to each saved issue
 export interface NetworkEntry {
   url: string;
   method: string;
@@ -254,7 +353,6 @@ export interface IssueContext {
   capturedErrors?: CapturedError[];
 }
 
-// Pre-computed analysis object returned by API_ANALYZE_ISSUES
 export interface PageGroup {
   pageUrl: string;
   issueIds: string[];
@@ -271,7 +369,21 @@ export interface SeverityGroup {
 export interface IssuePattern {
   pattern: string;
   issueIds: string[];
-  type: 'same-page' | 'same-error-source' | 'same-selector' | 'error-cluster';
+  type: 'same-page' | 'same-error-source' | 'same-selector' | 'error-cluster' | 'duplicate-cluster';
+}
+
+export interface IssueCluster {
+  id: string;
+  title: string;
+  issueIds: string[];
+  fingerprint: string;
+  severity: IssueSeverity;
+  reason: string;
+}
+
+export interface IssueStepCorrelation {
+  issueId: string;
+  stepIndices: number[];
 }
 
 export interface IssueAnalysis {
@@ -282,11 +394,14 @@ export interface IssueAnalysis {
   highCount: number;
   mediumCount: number;
   lowCount: number;
+  duplicateCount: number;
   issuesWithScreenshots: string[];
   issuesWithErrors: string[];
   byPage: PageGroup[];
   bySeverity: SeverityGroup[];
   patterns: IssuePattern[];
+  clusters: IssueCluster[];
+  correlatedSteps: IssueStepCorrelation[];
   recommendedTitle: string;
   executiveSummary: string;
 }
@@ -305,6 +420,7 @@ export interface CapturedError {
   url?: string;
   statusCode?: number;
   timestamp: number;
+  count?: number;
 }
 
 export interface Issue {
@@ -318,5 +434,7 @@ export interface Issue {
   severity: IssueSeverity;
   capturedError?: CapturedError;
   context?: IssueContext;
+  correlatedStepIndices?: number[];
+  fingerprint?: string;
   createdAt: number;
 }
