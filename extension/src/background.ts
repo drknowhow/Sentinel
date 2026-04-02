@@ -150,6 +150,7 @@ function wsConnect() {
     try {
       msg = JSON.parse(event.data as string);
     } catch {
+      console.warn('Sentinel WS: ignoring malformed message');
       return;
     }
     handleApiCommand(msg.id, msg.command, msg.payload ?? {});
@@ -158,6 +159,11 @@ function wsConnect() {
   ws.onclose = () => {
     ws = null;
     chrome.storage.local.set({ wsConnected: false });
+    // Flush orphaned pending commands so they don't leak
+    for (const [cmdId, pending] of _pendingCmds) {
+      appendAiLog(pending.command, pending.payload, pending.startMs, false, 'WS disconnected');
+      _pendingCmds.delete(cmdId);
+    }
     // Do NOT clear the keepalive alarm — it must stay running so the service
     // worker is periodically woken to retry the connection.
     scheduleReconnect();
@@ -223,6 +229,19 @@ async function ensureContentScript(tabId: number): Promise<boolean> {
   if (await pingTab(tabId)) return true;
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['src/content.js'] });
+
+    // Wait for the script to actually be alive and listening for messages
+    let ready = false;
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 150));
+      if (await pingTab(tabId)) {
+        ready = true;
+        break;
+      }
+    }
+
+    if (!ready) return false;
+
     // Re-sync recording/error-tracking state into the freshly injected script
     const stored = await chrome.storage.local.get(['isRecording', 'isErrorTracking']);
     if (stored.isRecording) await chrome.tabs.sendMessage(tabId, { type: 'START_RECORDING' }).catch(() => { });
@@ -244,9 +263,17 @@ async function updateContentScriptStatus() {
   chrome.storage.local.set({ contentScriptReady: alive, activeTabUrl: url });
 }
 
-// Update status when user switches tabs or a tab finishes loading
-chrome.tabs.onActivated.addListener(() => updateContentScriptStatus());
-chrome.tabs.onUpdated.addListener((_id, info) => { if (info.status === 'complete') updateContentScriptStatus(); });
+// Update status and auto-attach when user switches tabs or a tab finishes loading
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  await ensureContentScript(activeInfo.tabId);
+  await updateContentScriptStatus();
+});
+chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  if (info.status === 'complete') {
+    await ensureContentScript(tabId);
+    await updateContentScriptStatus();
+  }
+});
 
 // ── API Command Dispatcher ──
 
@@ -281,7 +308,8 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
       case 'API_ATTACH': {
         const tabId = await getActiveTabId();
         if (!tabId) { wsSend(id, false, undefined, 'No active tab'); break; }
-        const tab = await chrome.tabs.get(tabId);
+        let tab: chrome.tabs.Tab;
+        try { tab = await chrome.tabs.get(tabId); } catch { wsSend(id, false, undefined, 'Tab closed'); break; }
         const url = tab.url ?? '';
         const injectable = url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://');
         if (!injectable) { wsSend(id, false, undefined, `Cannot inject into: ${url}`); break; }
@@ -301,22 +329,21 @@ async function handleApiCommand(id: string, command: string, payload: Record<str
         const tabId = await getActiveTabId();
         if (!tabId) { wsSend(id, false, undefined, 'No active tab'); break; }
         await chrome.tabs.update(tabId, { url });
-        // Wait for page load
+        // Wait for page load with proper listener cleanup
         await new Promise<void>((resolve) => {
+          let resolved = false;
+          const cleanup = () => { if (!resolved) { resolved = true; chrome.tabs.onUpdated.removeListener(listener); resolve(); } };
           const listener = (tId: number, info: { status?: string }) => {
-            if (tId === tabId && info.status === 'complete') {
-              chrome.tabs.onUpdated.removeListener(listener);
-              resolve();
-            }
+            if (tId === tabId && info.status === 'complete') cleanup();
           };
           chrome.tabs.onUpdated.addListener(listener);
-          // Timeout after 30s
-          setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, 30000);
+          setTimeout(cleanup, 30000);
         });
         // Re-inject content script after navigation (old page context is destroyed)
         await ensureContentScript(tabId);
         chrome.storage.local.set({ contentScriptReady: true, activeTabUrl: url });
-        const tab = await chrome.tabs.get(tabId);
+        let tab: chrome.tabs.Tab;
+        try { tab = await chrome.tabs.get(tabId); } catch { wsSend(id, false, undefined, 'Tab closed during navigation'); break; }
         wsSend(id, true, { url: tab.url, title: tab.title });
         break;
       }
@@ -985,10 +1012,18 @@ onMessage((message: Message, _sender, sendResponse) => {
         (shouldScreenshot ? captureScreenshot() : Promise.resolve(null)).then(screenshot => {
           chrome.storage.local.get(['currentSession'], (result) => {
             const session = (result.currentSession as Action[]) || [];
+            
+            let screenshotRef = screenshot ?? undefined;
+            if (screenshot) {
+              const ssKey = `step_ss_${Date.now()}_${session.length}`;
+              chrome.storage.local.set({ [ssKey]: screenshot });
+              screenshotRef = ssKey;
+            }
+
             session.push({
               ...action,
               url: action.url || undefined,
-              screenshot: screenshot ?? undefined,
+              screenshot: screenshotRef,
             });
             chrome.storage.local.set({ currentSession: session });
           });
@@ -1139,8 +1174,8 @@ onMessage((message: Message, _sender, sendResponse) => {
           errors[existingIdx] = updatedError;
 
           // Propagate updated count to the auto-created Issue
-          chrome.storage.local.get(['issues'], (res) => {
-            const issues = (res.issues as Issue[]) || [];
+          chrome.storage.local.get(['sentinel_issues'], (res) => {
+            const issues = (res.sentinel_issues as Issue[]) || [];
             let updated = false;
             for (let i = 0; i < issues.length; i++) {
               if (
@@ -1152,7 +1187,7 @@ onMessage((message: Message, _sender, sendResponse) => {
               }
             }
             if (updated) {
-              chrome.storage.local.set({ issues });
+              chrome.storage.local.set({ sentinel_issues: issues });
             }
           });
         } else {
@@ -1278,6 +1313,44 @@ onMessage((message: Message, _sender, sendResponse) => {
       wsConnect();
       sendResponse({ ok: true });
       break;
+    }
+
+    case 'API_SCREENSHOT': {
+      captureScreenshot(1280).then(screenshot => {
+        sendResponse({ screenshot });
+      });
+      return true;
+    }
+
+    case 'GET_SELECTION': {
+      getActiveTabId().then(async (tabId) => {
+        if (!tabId) { sendResponse({ text: '' }); return; }
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => window.getSelection()?.toString() || '',
+          });
+          sendResponse({ text: results?.[0]?.result || '' });
+        } catch {
+          sendResponse({ text: '' });
+        }
+      });
+      return true;
+    }
+
+    case 'ATTACH_TAB': {
+      getActiveTabId().then(async (tabId) => {
+        if (!tabId) { sendResponse({ success: false, error: 'No active tab' }); return; }
+        const ok = await ensureContentScript(tabId);
+        if (ok) {
+          const tab = await chrome.tabs.get(tabId);
+          chrome.storage.local.set({ contentScriptReady: true, activeTabUrl: tab.url });
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: 'Failed to inject content script' });
+        }
+      });
+      return true;
     }
 
     case 'LAUNCH_MCP_SERVER':

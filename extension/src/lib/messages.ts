@@ -6,8 +6,8 @@ export function sendMessage<T = unknown>(
   payload?: T
 ): Promise<unknown> {
   const msg: Message<T> = { type, payload };
-  return chrome.runtime.sendMessage(msg).catch(() => {
-    // Receiver may not exist or may not send a response — this is fine
+  return chrome.runtime.sendMessage(msg).catch((err) => {
+    console.debug(`Sentinel sendMessage(${type}) failed:`, err?.message || err);
   });
 }
 
@@ -18,8 +18,8 @@ export function sendToTab<T = unknown>(
   payload?: T
 ): Promise<unknown> {
   const msg: Message<T> = { type, payload };
-  return chrome.tabs.sendMessage(tabId, msg).catch(() => {
-    // Content script may not be loaded on this tab
+  return chrome.tabs.sendMessage(tabId, msg).catch((err) => {
+    console.debug(`Sentinel sendToTab(${tabId}, ${type}) failed:`, err?.message || err);
   });
 }
 

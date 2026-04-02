@@ -2,8 +2,18 @@
   "mcpServers": {
     "sentinel": {
       "command": "python",
-      "args": ["mcp-server/sentinel_mcp.py"],
+      "args": [
+        "mcp-server/sentinel_mcp.py"
+      ],
       "cwd": "U:/1. Projects/Sentinel"
+    },
+    "c3": {
+      "command": "python",
+      "args": [
+        "U:/1. Projects/Claude Code Companion (C3)/claude-companion - v2/cli/mcp_server.py",
+        "--project",
+        "."
+      ]
     }
   }
 }

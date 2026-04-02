@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Web Application Tester & Guide Creator</strong><br>
-  Record web interactions, capture bugs and feature requests, and generate step-by-step visual guides — manually or fully automated via 50+ MCP tools.
+  Record web interactions, capture bugs and feature requests, manage notes and workspaces, and generate step-by-step visual guides — manually or fully automated via 50+ MCP tools.
 </p>
 
 <p align="center">
@@ -86,7 +86,7 @@ Sentinel/
 │       ├── content.ts       # Content script — recording, playback, inspection, element querying
 │       ├── App.tsx           # Main side panel UI
 │       ├── EditorApp.tsx     # Guide editor (opens in new tab)
-│       ├── components/       # React components (Header, StepList, ErrorFeed, IssueList, AiLog, etc.)
+│       ├── components/       # React components (Header, StepList, NoteModule, ProjectModule, ResourceModule, etc.)
 │       ├── hooks/            # Custom hooks (state sync, video recording, guide editor)
 │       └── lib/              # Utilities (storage, HTML/report generation, message types)
 ├── mcp-server/
@@ -113,6 +113,7 @@ Sentinel/
 | `tabCapture` | Record video of the active browser tab |
 | `alarms` | Schedule periodic tasks (connection health checks) |
 | `nativeMessaging` | Communicate with the native launcher to start/stop the MCP server |
+| `unlimitedStorage` | Remove the 10 MB storage quota for sessions, screenshots, and projects |
 
 ---
 

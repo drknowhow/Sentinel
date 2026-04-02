@@ -64,18 +64,24 @@ def _kill(pid: int) -> None:
 def read_pid() -> int | None:
     try:
         with open(PID_FILE) as f:
-            pid = int(f.read().strip())
+            raw = f.read().strip()
+        if not raw.isdigit():
+            os.unlink(PID_FILE)
+            return None
+        pid = int(raw)
         if _is_running(pid):
             return pid
         os.unlink(PID_FILE)
-    except Exception:
+    except (OSError, ValueError):
         pass
     return None
 
 
 def write_pid(pid: int) -> None:
-    with open(PID_FILE, 'w') as f:
+    tmp = PID_FILE + '.tmp'
+    with open(tmp, 'w') as f:
         f.write(str(pid))
+    os.replace(tmp, PID_FILE)
 
 
 # ── Commands ──
@@ -153,6 +159,7 @@ def cmd_install_local(payload: dict) -> dict:
     project_path = payload.get('project_path', '').strip()
     if not project_path:
         return {'success': False, 'error': 'project_path is required'}
+    project_path = os.path.abspath(project_path)
     if not os.path.isdir(project_path):
         return {'success': False, 'error': f'Directory not found: {project_path}'}
 
@@ -165,7 +172,7 @@ def cmd_install_local(payload: dict) -> dict:
         try:
             with open(output_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             pass  # Corrupt/empty file — start fresh
 
     if 'mcpServers' not in config or not isinstance(config['mcpServers'], dict):
@@ -193,19 +200,26 @@ def _kill_port(port: int) -> list[int]:
             out = subprocess.run(['netstat', '-ano'], capture_output=True, text=True).stdout
             for line in out.splitlines():
                 if f'127.0.0.1:{port}' in line and 'LISTENING' in line:
-                    pid = int(line.split()[-1])
+                    parts = line.split()
+                    pid_str = parts[-1] if parts else ''
+                    if not pid_str.isdigit():
+                        continue
+                    pid = int(pid_str)
                     subprocess.run(
-                        ['powershell', '-Command', f'Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue'],
+                        ['taskkill', '/F', '/PID', str(pid)],
                         capture_output=True,
                     )
                     killed.append(pid)
         else:
+            import signal as _sig
             out = subprocess.run(['lsof', '-ti', f'tcp:{port}'], capture_output=True, text=True).stdout
             for pid_str in out.strip().splitlines():
-                pid = int(pid_str)
-                os.kill(pid, 9)
+                if not pid_str.strip().isdigit():
+                    continue
+                pid = int(pid_str.strip())
+                os.kill(pid, _sig.SIGKILL)
                 killed.append(pid)
-    except Exception:
+    except (OSError, subprocess.SubprocessError, ValueError):
         pass
     return killed
 

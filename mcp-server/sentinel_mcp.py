@@ -26,7 +26,11 @@ async def _ws_handler(websocket: WebSocketServerProtocol) -> None:
     print("[sentinel-mcp] Extension connected")
     try:
         async for raw in websocket:
-            msg = json.loads(raw)
+            try:
+                msg = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                print(f"[sentinel-mcp] Ignoring malformed message: {str(raw)[:120]}")
+                continue
             # A new stdio-mode instance taking over the port sends this signal
             if msg.get("command") == "SHUTDOWN":
                 print("[sentinel-mcp] Shutdown signal received — releasing port for new instance")

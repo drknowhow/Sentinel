@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AcmeCorp CRM - Demo Portal</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4361ee;
+            --primary-light: #4895ef;
+            --primary-dark: #3f37c9;
+            --secondary: #f72585;
+            --bg-color: #f8f9fa;
+            --surface: #ffffff;
+            --text-main: #2b2d42;
+            --text-muted: #8d99ae;
+            --border: #e9ecef;
+            --success: #4cc9f0;
+            --warning: #fca311;
+            --danger: #ef233c;
+            --sidebar-bg: #0b090a;
+            --sidebar-text: #edf2f4;
+            --sidebar-hover: #161a1d;
+            --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+            --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+            --radius-md: 12px;
+            --radius-lg: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background-color: var(--sidebar-bg);
+            color: var(--sidebar-text);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+            z-index: 20;
+        }
+
+        .sidebar-header {
+            padding: 24px;
+            font-size: 24px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            letter-spacing: -0.5px;
+        }
+
+        .sidebar-header i {
+            color: var(--primary-light);
+            font-size: 28px;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 20px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 14px 20px;
+            border-radius: var(--radius-md);
+            color: #adb5bd;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .nav-item i {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+
+        .nav-item:hover {
+            background-color: var(--sidebar-hover);
+            color: var(--surface);
+            transform: translateX(4px);
+        }
+
+        .nav-item:hover i {
+            transform: scale(1.1);
+        }
+
+        .nav-item.active {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white;
+            box-shadow: 0 4px 12px rgba(67, 97, 238, 0.4);
+        }
+
+        .sidebar-footer {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .user-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--secondary), #ff758f);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 4px 10px rgba(247, 37, 133, 0.3);
+            border: 2px solid var(--sidebar-bg);
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-name {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .user-role {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            height: 72px;
+            min-height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .search-bar {
+            position: relative;
+        }
+
+        .search-bar input {
+            padding: 10px 16px 10px 40px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background-color: var(--bg-color);
+            outline: none;
+            width: 240px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .search-bar input:focus {
+            width: 280px;
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.15);
+            background-color: var(--surface);
+        }
+
+        .search-bar i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+        }
+
+        .notification-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: var(--text-muted);
+            cursor: pointer;
+            position: relative;
+            transition: color 0.3s ease;
+        }
+
+        .notification-btn:hover {
+            color: var(--primary);
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 8px;
+            height: 8px;
+            background-color: var(--danger);
+            border-radius: 50%;
+            border: 2px solid var(--surface);
+        }
+
+        /* Dashboard Container */
+        .dashboard {
+            padding: 32px;
+            width: 100%;
+            max-width: 1440px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .stat-card {
+            background-color: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card:hover {
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-4px);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(to bottom, var(--primary), var(--primary-light));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .stat-card:hover::before {
+            opacity: 1;
+        }
+
+        .stat-info {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -1px;
+        }
+
+        .stat-trend {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-trend.positive {
+            color: var(--success);
+        }
+
+        .stat-trend.negative {
+            color: var(--danger);
+        }
+
+        .stat-trend.neutral {
+            color: var(--warning);
+        }
+
+        .stat-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+        }
+
+        .stat-icon.primary {
+            background: rgba(67, 97, 238, 0.1);
+            color: var(--primary);
+        }
+
+        .stat-icon.secondary {
+            background: rgba(247, 37, 133, 0.1);
+            color: var(--secondary);
+        }
+
+        .stat-icon.success {
+            background: rgba(76, 201, 240, 0.1);
+            color: var(--success);
+        }
+
+        /* Action Area */
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 32px;
+        }
+
+        .panel {
+            background-color: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+            position: relative;
+        }
+
+        .panel-header {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 16px;
+        }
+
+        .panel-header i {
+            color: var(--primary);
+        }
+
+        /* Form */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-main);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 15px;
+            background-color: var(--bg-color);
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        .form-input:focus {
+            background-color: var(--surface);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.1);
+        }
+
+        .form-checkbox-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: var(--bg-color);
+            padding: 14px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            margin-bottom: 24px;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        .form-checkbox-group:hover {
+            border-color: var(--primary-light);
+        }
+
+        .form-checkbox-group input {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            box-shadow: 0 4px 12px rgba(67, 97, 238, 0.25);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(67, 97, 238, 0.35);
+        }
+
+        .btn-primary:active {
+            transform: translateY(1px);
+        }
+
+        /* Message */
+        .message {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+        }
+
+        .message.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .message-success {
+            background-color: rgba(76, 201, 240, 0.1);
+            color: #0077b6;
+            border: 1px solid rgba(76, 201, 240, 0.3);
+        }
+
+        .message-success i {
+            color: var(--success);
+            font-size: 18px;
+        }
+
+        .diagnostics-desc {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        /* Diagnostic Buttons */
+        .diag-btn {
+            width: 100%;
+            padding: 16px 20px;
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-main);
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+            font-size: 15px;
+        }
+
+        .diag-btn:hover {
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        .diag-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: var(--bg-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            font-size: 16px;
+        }
+
+        .btn-error:hover {
+            border-color: rgba(239, 35, 60, 0.3);
+            background-color: rgba(239, 35, 60, 0.02);
+        }
+
+        .btn-error:hover .diag-icon {
+            background-color: rgba(239, 35, 60, 0.1);
+            color: var(--danger);
+        }
+
+        .btn-error.active {
+            border-color: var(--danger);
+            background-color: rgba(239, 35, 60, 0.1);
+            color: var(--danger);
+        }
+
+        .btn-error.active .diag-icon {
+            background-color: var(--danger);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            border-color: rgba(252, 163, 17, 0.3);
+            background-color: rgba(252, 163, 17, 0.02);
+        }
+
+        .btn-warning:hover .diag-icon {
+            background-color: rgba(252, 163, 17, 0.1);
+            color: var(--warning);
+        }
+
+        .btn-warning.active {
+            border-color: var(--warning);
+            background-color: rgba(252, 163, 17, 0.1);
+            color: var(--warning);
+        }
+
+        .btn-warning.active .diag-icon {
+            background-color: var(--warning);
+            color: white;
+        }
+
+        .btn-info:hover {
+            border-color: rgba(67, 97, 238, 0.3);
+            background-color: rgba(67, 97, 238, 0.02);
+        }
+
+        .btn-info:hover .diag-icon {
+            background-color: rgba(67, 97, 238, 0.1);
+            color: var(--primary);
+        }
+
+        .btn-info.active {
+            border-color: var(--primary);
+            background-color: rgba(67, 97, 238, 0.1);
+            color: var(--primary);
+        }
+
+        .btn-info.active .diag-icon {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        /* Table */
+        .table-container {
+            background-color: var(--surface);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .table-header {
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            background-color: rgba(248, 249, 250, 0.5);
+        }
+
+        .table-header h2 {
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .table-header h2 i {
+            color: var(--text-muted);
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-sm:hover {
+            background-color: var(--primary-light);
+            color: white;
+            border-color: var(--primary-light);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 16px 24px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th.right {
+            text-align: right;
+        }
+
+        th.center {
+            text-align: center;
+        }
+
+        td {
+            padding: 16px 24px;
+            font-size: 14px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-main);
+            vertical-align: middle;
+        }
+
+        td.right {
+            text-align: right;
+        }
+
+        td.center {
+            text-align: center;
+        }
+
+        tbody tr {
+            transition: background-color 0.2s;
+            cursor: pointer;
+        }
+
+        tbody tr:hover {
+            background-color: rgba(67, 97, 238, 0.03);
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .tx-id {
+            font-family: monospace;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .customer-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+        }
+
+        .customer-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .avatar-1 {
+            background: rgba(247, 37, 133, 0.1);
+            color: var(--secondary);
+        }
+
+        .avatar-2 {
+            background: rgba(114, 9, 183, 0.1);
+            color: #7209b7;
+        }
+
+        .avatar-3 {
+            background: rgba(76, 201, 240, 0.1);
+            color: var(--success);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .badge-success {
+            background-color: rgba(76, 201, 240, 0.1);
+            color: #0077b6;
+        }
+
+        .badge-warning {
+            background-color: rgba(252, 163, 17, 0.1);
+            color: #b07000;
+        }
+
+        .badge-danger {
+            background-color: rgba(239, 35, 60, 0.1);
+            color: var(--danger);
+        }
+
+        footer {
+            margin-top: 20px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        /* Animations */
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .fa-spin {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <i class="fas fa-layer-group"></i> AcmeCorp
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active">
+                <i class="fas fa-chart-pie"></i> Dashboard
+            </a>
+            <a href="#" class="nav-item">
+                <i class="fas fa-users"></i> Customers
+            </a>
+            <a href="#" class="nav-item">
+                <i class="fas fa-wallet"></i> Billing
+            </a>
+            <a href="#" class="nav-item">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="user-avatar">JD</div>
+            <div class="user-info">
+                <span class="user-name">Jane Doe</span>
+                <span class="user-role">System Admin</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Header -->
+        <header class="header">
+            <h1>Dashboard Overview</h1>
+            <div class="header-actions">
+                <div class="search-bar">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="Search operations...">
+                </div>
+                <button class="notification-btn" id="notifications-btn" title="View Notifications">
+                    <i class="fas fa-bell"></i>
+                    <div class="notification-badge"></div>
+                </button>
+            </div>
+        </header>
+
+        <!-- Dashboard Content -->
+        <div class="dashboard">
+            <!-- Stats Row -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-info">
+                        <div class="stat-label">Total Revenue</div>
+                        <div class="stat-value">$124,563.00</div>
+                        <div class="stat-trend positive">
+                            <i class="fas fa-arrow-up"></i> +14.5% vs last month
+                        </div>
+                    </div>
+                    <div class="stat-icon success">
+                        <i class="fas fa-dollar-sign"></i>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-info">
+                        <div class="stat-label">Active Users</div>
+                        <div class="stat-value" id="active-users-count">2,451</div>
+                        <div class="stat-trend primary">
+                            <i class="fas fa-arrow-up"></i> +5.2% vs last month
+                        </div>
+                    </div>
+                    <div class="stat-icon primary">
+                        <i class="fas fa-users"></i>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-info">
+                        <div class="stat-label">System Health</div>
+                        <div class="stat-value">99.9%</div>
+                        <div class="stat-trend neutral">
+                            <i class="fas fa-check-circle"></i> All services operational
+                        </div>
+                    </div>
+                    <div class="stat-icon secondary">
+                        <i class="fas fa-server"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Area for Testing -->
+            <div class="action-grid">
+                <!-- Data Entry Form -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <i class="fas fa-plus-circle"></i> Create Customer
+                    </div>
+                    <form id="customer-form">
+                        <div class="form-group">
+                            <label class="form-label" for="company-name">Company Name</label>
+                            <input type="text" id="company-name" class="form-input" placeholder="e.g. Globex Corp"
+                                required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="contact-email">Contact Email</label>
+                            <input type="email" id="contact-email" class="form-input" placeholder="contact@globex.com"
+                                required>
+                        </div>
+                        <div class="form-checkbox-group">
+                            <label for="premium-tier" style="font-size:14px; font-weight:600;">Premium Support
+                                Tier</label>
+                            <input type="checkbox" id="premium-tier">
+                        </div>
+                        <button type="submit" id="submit-customer-btn" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save Customer Record
+                        </button>
+                    </form>
+                    <div id="success-message" class="message message-success">
+                        <i class="fas fa-check-circle"></i> Customer saved successfully to database!
+                    </div>
+                </div>
+
+                <!-- Debugging & Error Simulation -->
+                <div class="panel flex-col">
+                    <div class="panel-header" style="color:var(--secondary)">
+                        <i class="fas fa-stethoscope" style="color:var(--secondary)"></i> System Diagnostics
+                    </div>
+                    <p class="diagnostics-desc">
+                        Use these advanced controls to test Sentinel's error capture, runtime assertions, and
+                        performance monitoring.
+                    </p>
+
+                    <div class="diagnostics-actions">
+                        <button id="trigger-error-btn" class="diag-btn btn-error">
+                            Simulate JavaScript Error
+                            <div class="diag-icon"><i class="fas fa-bug"></i></div>
+                        </button>
+
+                        <button id="trigger-network-btn" class="diag-btn btn-warning">
+                            Simulate Failed API Call (404)
+                            <div class="diag-icon"><i class="fas fa-network-wired"></i></div>
+                        </button>
+
+                        <button id="trigger-long-task-btn" class="diag-btn btn-info">
+                            Process Heavy Data (UI Lag)
+                            <div class="diag-icon"><i class="fas fa-hourglass-half"></i></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Table -->
+            <div class="table-container">
+                <div class="table-header">
+                    <h2><i class="fas fa-list"></i> Recent Transactions</h2>
+                    <button class="btn-sm">View All</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Transaction ID</th>
+                            <th>Customer</th>
+                            <th class="right">Amount</th>
+                            <th class="center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="tx-id">TX-99321</td>
+                            <td class="customer-cell">
+                                <div class="customer-avatar avatar-1">IL</div>
+                                Initech LLC
+                            </td>
+                            <td class="right" style="font-weight:600">$4,500.00</td>
+                            <td class="center">
+                                <span class="badge badge-success"><i class="fas fa-check"></i> Completed</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="tx-id">TX-99320</td>
+                            <td class="customer-cell">
+                                <div class="customer-avatar avatar-2">MD</div>
+                                Massive Dynamic
+                            </td>
+                            <td class="right" style="font-weight:600">$12,850.00</td>
+                            <td class="center">
+                                <span class="badge badge-warning"><i class="fas fa-clock"></i> Pending</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="tx-id">TX-99319</td>
+                            <td class="customer-cell">
+                                <div class="customer-avatar avatar-3">SC</div>
+                                Soylent Corp
+                            </td>
+                            <td class="right" style="font-weight:600">$890.00</td>
+                            <td class="center">
+                                <span class="badge badge-danger"><i class="fas fa-times"></i> Failed</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <footer>
+                &copy; 2026 AcmeCorp Data Systems. All rights reserved. Built for Sentinel Testing.
+            </footer>
+        </div>
+    </main>
+
+    <script>
+        // Form Submission
+        document.getElementById('customer-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            const btn = document.getElementById('submit-customer-btn');
+            const originalHtml = btn.innerHTML;
+
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            btn.style.opacity = '0.8';
+            btn.style.pointerEvents = 'none';
+
+            setTimeout(() => {
+                // Randomly fail form submission 30% of the time - throws a REAL error Sentinel can catch
+                if (Math.random() < 0.3) {
+                    btn.innerHTML = '<i class="fas fa-times-circle"></i> Save Failed';
+                    btn.style.background = '#ef233c';
+                    setTimeout(() => {
+                        btn.innerHTML = originalHtml;
+                        btn.style.background = '';
+                        btn.style.opacity = '1';
+                        btn.style.pointerEvents = 'auto';
+                    }, 3000);
+                    // Throw a real uncaught error that window.addEventListener('error') will catch
+                    throw new Error("API Error: POST /v1/customers failed with 500 Internal Server Error — connection to database pool timed out after 30000ms");
+                }
+
+                btn.innerHTML = originalHtml;
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+
+                const successMsg = document.getElementById('success-message');
+                successMsg.classList.add('show');
+                setTimeout(() => {
+                    successMsg.classList.remove('show');
+                    e.target.reset();
+                }, 4000);
+            }, 1200);
+        });
+
+        // Simulating Errors — uses REAL uncaught exceptions
+        document.getElementById('trigger-error-btn').addEventListener('click', function (e) {
+            e.preventDefault();
+
+            const btn = this;
+            const originalHtml = btn.innerHTML;
+            btn.classList.add('active');
+            btn.innerHTML = 'Error Thrown! <div class="diag-icon"><i class="fas fa-exclamation-triangle"></i></div>';
+
+            setTimeout(() => {
+                btn.innerHTML = originalHtml;
+                btn.classList.remove('active');
+            }, 2500);
+
+            // Throw a REAL TypeError (not just console.error) — caught by window 'error' event
+            setTimeout(function () {
+                const config = undefined;
+                config.render(); // TypeError: Cannot read properties of undefined (reading 'render')
+            }, 50);
+        });
+
+        // Simulating Network Errors — uses REAL unhandled promise rejection
+        document.getElementById('trigger-network-btn').addEventListener('click', function (e) {
+            e.preventDefault();
+
+            // This creates an UNHANDLED promise rejection — caught by 'unhandledrejection' event
+            fetch('https://api.acmecorp.local/v1/metrics/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active: true })
+            }).then(function (r) {
+                if (!r.ok) throw new Error("API returned " + r.status);
+                return r.json();
+            });
+            // Note: NO .catch() — this is intentionally an unhandled rejection
+
+            const btn = this;
+            const originalHtml = btn.innerHTML;
+            btn.classList.add('active');
+            btn.innerHTML = 'Network Request Failed! <div class="diag-icon"><i class="fas fa-wifi"></i></div>';
+
+            setTimeout(() => {
+                btn.innerHTML = originalHtml;
+                btn.classList.remove('active');
+            }, 2500);
+        });
+
+        // Heavy process
+        document.getElementById('trigger-long-task-btn').addEventListener('click', function (e) {
+            e.preventDefault();
+            const btn = this;
+            const originalHtml = btn.innerHTML;
+
+            btn.classList.add('active');
+            btn.innerHTML = 'Processing Data Sphere... <div class="diag-icon"><i class="fas fa-spinner fa-spin"></i></div>';
+
+            // Freeze UI temporarily
+            setTimeout(() => {
+                const start = Date.now();
+                while (Date.now() - start < 1500) {
+                    // synchronous blocking
+                }
+                btn.innerHTML = originalHtml;
+                btn.classList.remove('active');
+            }, 100);
+        });
+
+        // ── Background Bug Generator ──
+        // Produces a rich variety of realistic bugs for Sentinel to catch
+
+        // Bug 1: TypeError — null reference (every ~4s, 25% chance)
+        setInterval(function () {
+            if (Math.random() < 0.25) {
+                setTimeout(function () {
+                    var widget = document.querySelector('#analytics-widget');
+                    widget.getAttribute('data-config'); // TypeError: Cannot read properties of null
+                }, 0);
+            }
+        }, 4000);
+
+        // Bug 2: Unhandled promise rejection — API heartbeat (every ~5s, 30% chance)
+        setInterval(function () {
+            if (Math.random() < 0.30) {
+                fetch('https://api.acmecorp.local/v1/heartbeat').then(function (r) {
+                    throw new Error("Heartbeat check failed: service unavailable (503)");
+                });
+            }
+        }, 5000);
+
+        // Bug 3: ReferenceError — undefined module (every ~6s, 20% chance)
+        setInterval(function () {
+            if (Math.random() < 0.20) {
+                setTimeout(function () {
+                    appMetrics.dashboard.refresh(); // ReferenceError: appMetrics is not defined
+                }, 0);
+            }
+        }, 6000);
+
+        // Bug 4: RangeError — stack overflow (every ~8s, 15% chance)
+        setInterval(function () {
+            if (Math.random() < 0.15) {
+                setTimeout(function () {
+                    function recursiveSync(n) { return recursiveSync(n + 1); }
+                    recursiveSync(0); // RangeError: Maximum call stack size exceeded
+                }, 0);
+            }
+        }, 8000);
+
+        // Bug 5: Unhandled rejection — database timeout (every ~7s, 20% chance)
+        setInterval(function () {
+            if (Math.random() < 0.20) {
+                new Promise(function (resolve, reject) {
+                    reject(new Error("DatabaseError: Connection pool exhausted — 0 of 10 connections available (waited 30000ms)"));
+                });
+            }
+        }, 7000);
+
+        // Bug 6: Network error — background sync (every ~6s, 25% chance)
+        setInterval(function () {
+            if (Math.random() < 0.25) {
+                fetch('https://api.acmecorp.local/v1/sync/realtime', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ts: Date.now() })
+                }).then(function (r) {
+                    throw new Error("SyncError: Upstream returned 502 Bad Gateway — load balancer timeout");
+                });
+            }
+        }, 6000);
+
+        // Bug 7: TypeError — prototype chain error (every ~9s, 15% chance)
+        setInterval(function () {
+            if (Math.random() < 0.15) {
+                setTimeout(function () {
+                    var data = JSON.parse('{"users": null}');
+                    data.users.forEach(function (u) { return u.name; }); // TypeError: data.users.forEach is not a function (or null)
+                }, 0);
+            }
+        }, 9000);
+    </script>
+</body>
+
+</html>

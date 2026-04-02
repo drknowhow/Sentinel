@@ -392,7 +392,8 @@ function _showRipple(x: number, y: number) {
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
   (document.body || document.documentElement).appendChild(el);
-  setTimeout(() => el.remove(), 600);
+  const timer = setTimeout(() => { el.remove(); }, 600);
+  el.addEventListener('remove', () => clearTimeout(timer), { once: true });
 }
 
 function _onMouseMove(e: MouseEvent) {
@@ -402,17 +403,25 @@ function _onMouseMove(e: MouseEvent) {
   }
 }
 
+let _cursorDotListenerActive = false;
+
 function _startCursorDot() {
   if (_cursorDot) return;
   _ensureFeedbackStyles();
   _cursorDot = document.createElement('div');
   _cursorDot.className = '__s-cursor';
   (document.body || document.documentElement).appendChild(_cursorDot);
-  document.addEventListener('mousemove', _onMouseMove, { passive: true });
+  if (!_cursorDotListenerActive) {
+    document.addEventListener('mousemove', _onMouseMove, { passive: true });
+    _cursorDotListenerActive = true;
+  }
 }
 
 function _stopCursorDot() {
-  document.removeEventListener('mousemove', _onMouseMove);
+  if (_cursorDotListenerActive) {
+    document.removeEventListener('mousemove', _onMouseMove);
+    _cursorDotListenerActive = false;
+  }
   if (_cursorDot) { _cursorDot.remove(); _cursorDot = null; }
 }
 
@@ -476,8 +485,8 @@ function emitError(source: import('./types').ErrorSource, message: string, extra
 
 window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== window) return;
-  const d = e.data as { __sentinel?: string; url?: string; method?: string; status?: number; error?: string; duration?: number; level?: string; message?: string };
-  if (!d?.__sentinel) return;
+  if (typeof e.data !== 'object' || e.data === null || !e.data.__sentinel) return;
+  const d = e.data as { __sentinel: string; url?: string; method?: string; status?: number; error?: string; duration?: number; level?: string; message?: string };
   if (d.__sentinel === 'net_start') {
     _pendingNetCount++;
   } else if (d.__sentinel === 'net_end' || d.__sentinel === 'net_error') {
@@ -998,28 +1007,30 @@ async function playbackSession(
           element.style.outline = '3px solid #ff0000';
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-          await delay(800 / speed, signal);
+          try {
+            await delay(800 / speed, signal);
 
-          if (action.type === 'click') {
-            element.click();
-          } else if (action.type === 'dblclick') {
-            element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-          } else if (action.type === 'input') {
-            (element as HTMLInputElement).value = action.value || '';
-            element.dispatchEvent(new Event('input', { bubbles: true }));
-            element.dispatchEvent(new Event('change', { bubbles: true }));
-          } else if (action.type === 'keydown') {
-            const key = action.value || '';
-            element.dispatchEvent(
-              new KeyboardEvent('keydown', { key, bubbles: true })
-            );
-          } else if (action.type === 'submit') {
-            if (element instanceof HTMLFormElement) {
-              element.requestSubmit();
+            if (action.type === 'click') {
+              element.click();
+            } else if (action.type === 'dblclick') {
+              element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            } else if (action.type === 'input') {
+              (element as HTMLInputElement).value = action.value || '';
+              element.dispatchEvent(new Event('input', { bubbles: true }));
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+            } else if (action.type === 'keydown') {
+              const key = action.value || '';
+              element.dispatchEvent(
+                new KeyboardEvent('keydown', { key, bubbles: true })
+              );
+            } else if (action.type === 'submit') {
+              if (element instanceof HTMLFormElement) {
+                element.requestSubmit();
+              }
             }
+          } finally {
+            element.style.outline = originalOutline;
           }
-
-          element.style.outline = originalOutline;
           stepMetrics.push({
             ...resolved.metric,
             index: i,

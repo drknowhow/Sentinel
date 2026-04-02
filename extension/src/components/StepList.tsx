@@ -35,6 +35,25 @@ export default function StepList({ actions, currentPlaybackStep }: StepListProps
   const bottomRef = useRef<HTMLDivElement>(null);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
+  const handleAnnotate = async (action: Action, index: number) => {
+    if (!action.screenshot) return;
+    
+    let dataUrl = action.screenshot;
+    // If it's a storage key (step_ss_...), fetch the actual data
+    if (dataUrl.startsWith('step_ss_')) {
+      const result = await chrome.storage.local.get(dataUrl);
+      dataUrl = result[dataUrl] as string;
+    }
+    
+    if (!dataUrl) return;
+
+    const storageKey = `preview_${Date.now()}`;
+    await chrome.storage.local.set({ [storageKey]: dataUrl });
+    
+    const previewUrl = chrome.runtime.getURL(`preview.html?key=${storageKey}&type=screenshot&title=${encodeURIComponent(`Step #${index + 1}: ${action.description || 'Action'}`)}&id=step-${index}&sourceId=current-session`);
+    chrome.tabs.create({ url: previewUrl });
+  };
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [actions.length]);
@@ -112,6 +131,17 @@ export default function StepList({ actions, currentPlaybackStep }: StepListProps
                       {action.targetSnapshot?.text ? (
                         <p className="text-gray-600 italic border-l-2 border-gray-200 pl-2 mt-1 py-0.5">"{action.targetSnapshot.text.slice(0, 60)}{action.targetSnapshot.text.length > 60 ? '...' : ''}"</p>
                       ) : null}
+                      
+                      {action.screenshot && (
+                        <button 
+                          onClick={() => handleAnnotate(action, i)}
+                          className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-cyan-50 text-cyan-700 border border-cyan-100 rounded text-[10px] font-bold hover:bg-cyan-100 transition-colors w-fit"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 19l7-7 3 3-7 7-3-3z" /><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" /><path d="M2 2l5 5" /></svg>
+                          ANNOTATE STEP
+                        </button>
+                      )}
+                      
                       <p className="text-[10px] text-gray-400 font-medium text-right mt-1">{new Date(action.timestamp).toLocaleTimeString()}</p>
                     </div>
                   )}

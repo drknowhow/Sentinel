@@ -1,0 +1,9 @@
+{
+  "name": "com.sentinel.launcher",
+  "description": "Sentinel MCP server launcher",
+  "path": "U:\\1. Projects\\Sentinel\\mcp-server\\sentinel_launcher.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://nloalfkbjkmmillojpkoaammhmpefknf/"
+  ]
+}

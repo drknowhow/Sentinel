@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { sendMessage } from '../lib/messages';
 import type { Action, Issue, IssueAnalysis } from '../types';
 import { analyzeIssues } from '../lib/storage';
 
 interface IssueListProps {
   issues: Issue[];
+  activeTabUrl: string | null;
 }
 
 type Filter = 'all' | 'bug' | 'feature-request';
@@ -20,15 +21,44 @@ function stripScreenshots(issues: Issue[]): Issue[] {
   return issues.map(issue => ({ ...issue, screenshot: undefined }));
 }
 
-export default function IssueList({ issues }: IssueListProps) {
+export default function IssueList({ issues, activeTabUrl }: IssueListProps) {
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
+  const [currentPageOnly, setCurrentPageOnly] = useState(true);
   const [analysis, setAnalysis] = useState<IssueAnalysis | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const filtered = filter === 'all' ? issues : issues.filter(issue => issue.type === filter);
+  const filtered = useMemo(() => {
+    let list = issues;
+    if (currentPageOnly && activeTabUrl) {
+      try {
+        const currentHost = new URL(activeTabUrl).hostname;
+        list = list.filter(issue => {
+          try {
+            const issueHost = new URL(issue.pageUrl).hostname;
+            return issueHost === currentHost;
+          } catch { 
+            // Fallback: If issue pageUrl is invalid, only show if not in current page mode or no hostname to match
+            return false; 
+          }
+        });
+      } catch { /* ignore invalid urls */ }
+    } else if (currentPageOnly && !activeTabUrl) {
+      // If no active URL but filter is on, show everything rather than nothing
+      list = issues;
+    }
+    if (filter !== 'all') {
+      list = list.filter(issue => issue.type === filter);
+    }
+    return list;
+  }, [issues, filter, currentPageOnly, activeTabUrl]);
 
   const clusters = useMemo(() => analysis?.clusters || [], [analysis]);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); };
+  }, []);
 
   const refreshAnalysis = async () => {
     const result = await chrome.storage.local.get('currentSession');
@@ -38,7 +68,7 @@ export default function IssueList({ issues }: IssueListProps) {
 
   const handleDelete = (id: string) => {
     sendMessage('DELETE_ISSUE', { id });
-    setTimeout(() => refreshAnalysis(), 200);
+    refreshTimerRef.current = setTimeout(() => refreshAnalysis(), 200);
   };
 
   const handleExportHtml = async () => {
@@ -77,7 +107,7 @@ export default function IssueList({ issues }: IssueListProps) {
             capturedError: issue.capturedError,
           });
         }
-        setTimeout(() => refreshAnalysis(), 250);
+        refreshTimerRef.current = setTimeout(() => refreshAnalysis(), 250);
       } catch {
         // Ignore invalid JSON imports.
       }
@@ -89,7 +119,16 @@ export default function IssueList({ issues }: IssueListProps) {
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 pt-3 pb-2 space-y-2">
-        <div className="flex gap-1.5 items-center">
+        <div className="flex gap-1.5 items-center flex-wrap">
+          <button
+            onClick={() => setCurrentPageOnly(!currentPageOnly)}
+            className={`px-2 py-1 text-xs rounded border transition-all ${currentPageOnly 
+              ? 'bg-cyan-50 text-cyan-700 border-cyan-200 font-bold' 
+              : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}
+          >
+            {currentPageOnly ? 'Current Page' : 'All Pages'}
+          </button>
+          <div className="h-4 w-[1px] bg-gray-200 mx-0.5" />
           {(['all', 'bug', 'feature-request'] as Filter[]).map(f => (
             <button
               key={f}
@@ -199,6 +238,14 @@ export default function IssueList({ issues }: IssueListProps) {
         </div>
       ) : (
         <div className="overflow-y-auto flex-1 px-4 pb-4 space-y-3 pt-1">
+          {filtered.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+              <p className="text-xs text-gray-500 font-medium">No issues match current filters</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                {currentPageOnly ? 'Try switching to "All Pages"' : 'Try changing the type filter'}
+              </p>
+            </div>
+          )}
           {filtered.map(issue => (
             <div key={issue.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col group transition-shadow hover:shadow-md">
               <div className="px-3 py-2 bg-gray-50 flex items-start gap-2 border-b border-gray-100">

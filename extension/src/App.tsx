@@ -10,13 +10,16 @@ import AssertionBuilder from './components/AssertionBuilder';
 import TestReport from './components/TestReport';
 import FeatureRequestBuilder from './components/FeatureRequestBuilder';
 import IssueList from './components/IssueList';
+import NoteModule from './components/NoteModule';
+import ProjectModule from './components/ProjectModule';
+import ResourceModule from './components/ResourceModule';
 import Footer from './components/Footer';
 import SettingsPanel from './components/SettingsPanel';
 import AiLog from './components/AiLog';
 import ErrorBoundary from './components/ErrorBoundary';
 import type { Assertion, AiLogEntry } from './types';
 
-type FeedTab = 'steps' | 'findings' | 'videos' | 'ai' | 'settings';
+type FeedTab = 'steps' | 'findings' | 'notes' | 'resources' | 'projects' | 'videos' | 'ai' | 'settings';
 type StepsPanel = 'sessions' | 'assertions' | 'report' | 'feature' | null;
 
 function TabButton({ active, onClick, label, count, activeColor, icon }: {
@@ -72,6 +75,7 @@ function App() {
   const {
     isRecording, currentSession, playback,
     isErrorTracking, capturedErrors, issues,
+    projects, activeProjectId, userNotes, draftNote
   } = useExtensionState();
   const video = useVideoRecorder();
   const [feedTab, setFeedTab] = useState<FeedTab>('steps');
@@ -162,6 +166,8 @@ function App() {
         activeTabUrl={activeTabUrl}
         isInspecting={isInspecting}
         onToggleInspect={toggleInspect}
+        projects={projects}
+        activeProjectId={activeProjectId}
       />
 
       {isPlaying && (
@@ -241,7 +247,32 @@ function App() {
             </>
           )}
           {feedTab === 'findings' && (
-            <IssueList issues={issues} />
+            <IssueList issues={issues} activeTabUrl={activeTabUrl} />
+          )}
+          {feedTab === 'notes' && (
+            <NoteModule 
+              notes={userNotes} 
+              projects={projects}
+              issues={issues}
+              activeProjectId={activeProjectId} 
+              draftNote={draftNote}
+            />
+          )}
+          {feedTab === 'resources' && (
+            <ResourceModule 
+              activeProjectId={activeProjectId} 
+              projects={projects}
+              notes={userNotes}
+              issues={issues}
+              videoClips={video.clips}
+            />
+          )}
+          {feedTab === 'projects' && (
+            <ProjectModule 
+              projects={projects} 
+              activeId={activeProjectId} 
+              notes={userNotes}
+            />
           )}
           {feedTab === 'videos' && (
             <VideoFeed
@@ -269,6 +300,18 @@ function App() {
         <TabButton
           active={feedTab === 'findings'} onClick={() => setFeedTab('findings')} label="Findings" count={issues.length} activeColor="text-orange-500"
           icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></svg>}
+        />
+        <TabButton
+          active={feedTab === 'notes'} onClick={() => setFeedTab('notes')} label="Notes" count={userNotes.length} activeColor="text-cyan-600"
+          icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>}
+        />
+        <TabButton
+          active={feedTab === 'resources'} onClick={() => setFeedTab('resources')} label="Resources" count={0} activeColor="text-amber-500"
+          icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>}
+        />
+        <TabButton
+          active={feedTab === 'projects'} onClick={() => setFeedTab('projects')} label="Workspaces" count={projects.length} activeColor="text-indigo-600"
+          icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z" /><path d="M3 9V5a2 2 0 0 1 2-2h6l2 3h7a2 2 0 0 1 2 2v1" /></svg>}
         />
         <TabButton
           active={feedTab === 'videos'} onClick={() => setFeedTab('videos')} label="Videos" count={video.clips.length + (video.isVideoRecording ? 1 : 0)} activeColor="text-pink-500"

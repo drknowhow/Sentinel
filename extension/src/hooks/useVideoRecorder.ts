@@ -1,13 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import type { VideoClip } from '../types';
+import { getActiveProjectId } from '../lib/storage';
 
 const MAX_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
-export interface VideoClip {
-  id: string;
-  url: string;
-  durationSec: number;
-  createdAt: number;
-}
 
 export function useVideoRecorder() {
   const [isVideoRecording, setIsVideoRecording] = useState(false);
@@ -82,13 +78,16 @@ export function useVideoRecorder() {
 
         if (chunksRef.current.length > 0) {
           const blob = new Blob(chunksRef.current, { type: mimeType });
-          const clip: VideoClip = {
-            id: Date.now().toString(36),
-            url: URL.createObjectURL(blob),
-            durationSec: finalDuration,
-            createdAt: Date.now(),
-          };
-          setClips(prev => [...prev, clip]);
+          getActiveProjectId().then(projectId => {
+            const clip: VideoClip = {
+              id: Date.now().toString(36),
+              url: URL.createObjectURL(blob),
+              durationSec: finalDuration,
+              createdAt: Date.now(),
+              projectId: projectId || undefined,
+            };
+            setClips(prev => [...prev, clip]);
+          });
         }
 
         setIsVideoRecording(false);

@@ -124,6 +124,14 @@ export interface PlaybackRunSummary {
   stepMetrics: PlaybackStepMetric[];
 }
 
+export interface VideoClip {
+  id: string;
+  url: string;
+  durationSec: number;
+  createdAt: number;
+  projectId?: string;
+}
+
 // Session management
 
 export type SessionKind = 'recording' | 'suite';
@@ -215,6 +223,7 @@ export type MessageType =
   | 'INSTALL_LOCAL_MCP'
   | 'REMOVE_LOCAL_MCP'
   | 'FORCE_RESTART_MCP'
+  | 'ATTACH_TAB'
   | 'PING'
   | 'API_ATTACH'
   | 'API_NAVIGATE'
@@ -252,7 +261,8 @@ export type MessageType =
   | 'API_SAVE_SESSION'
   | 'API_LOAD_SESSION'
   | 'API_LIST_SESSIONS'
-  | 'API_RUN_SAVED_SESSION';
+  | 'API_RUN_SAVED_SESSION'
+  | 'GET_SELECTION';
 
 export interface Message<T = unknown> {
   type: MessageType;
@@ -428,6 +438,7 @@ export interface Issue {
   type: IssueType;
   title: string;
   notes: string;
+  projectId?: string;
   selector?: string;
   pageUrl: string;
   screenshot?: string;
@@ -437,4 +448,42 @@ export interface Issue {
   correlatedStepIndices?: number[];
   fingerprint?: string;
   createdAt: number;
+}
+
+// Project management
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  path: string;
+  devUrl: string;
+  repositoryUrl?: string;
+  createdAt: number;
+  updatedAt: number;
+  metadata?: {
+    notesCount?: number;
+    issuesCount?: number;
+    sessionsCount?: number;
+  };
+}
+
+// User Notes
+
+export interface NoteAttachment {
+  type: 'screenshot' | 'video' | 'bug' | 'session' | 'quote';
+  id: string;
+  previewUrl?: string;
+  title?: string;
+}
+
+export interface UserNote {
+  id: string;
+  projectId: string;
+  title: string;
+  content: string;
+  tags: string[];
+  attachments: NoteAttachment[];
+  createdAt: number;
+  updatedAt: number;
 }

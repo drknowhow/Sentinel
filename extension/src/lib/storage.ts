@@ -1,4 +1,6 @@
 import type {
+  Project,
+  UserNote,
   Action,
   ExportOptions,
   GuideAnalysis,
@@ -20,6 +22,9 @@ import type {
 const SESSIONS_KEY = 'sentinel_sessions';
 const ACTIVE_SESSION_KEY = 'sentinel_active_session_id';
 const ISSUES_KEY = 'sentinel_issues';
+const PROJECTS_KEY = 'sentinel_projects';
+const ACTIVE_PROJECT_KEY = 'sentinel_active_project';
+const USER_NOTES_KEY = 'sentinel_user_notes';
 
 const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
   profile: 'internal',
@@ -30,7 +35,7 @@ const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
 };
 
 function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  return crypto.randomUUID();
 }
 
 function normalizeText(value: string | undefined): string {
@@ -205,6 +210,7 @@ export async function saveIssue(data: {
   type: IssueType;
   title: string;
   notes: string;
+  projectId?: string;
   selector?: string;
   pageUrl: string;
   screenshot?: string;
@@ -214,9 +220,11 @@ export async function saveIssue(data: {
   correlatedStepIndices?: number[];
 }): Promise<Issue> {
   const issues = await getIssues();
+  const activeProjectId = await getActiveProjectId();
   const issue: Issue = {
     id: generateId(),
     ...data,
+    projectId: data.projectId || activeProjectId || undefined,
     fingerprint: buildIssueFingerprint(data),
     createdAt: Date.now(),
   };
@@ -231,14 +239,73 @@ export async function deleteIssue(id: string): Promise<void> {
   await chrome.storage.local.set({ [ISSUES_KEY]: filtered });
 }
 
+const ISSUE_UPDATABLE_FIELDS: (keyof Issue)[] = ['title', 'notes', 'severity', 'type', 'selector', 'pageUrl'];
+
 export async function updateIssue(id: string, updates: Partial<Issue>): Promise<void> {
   const issues = await getIssues();
   const issue = issues.find(i => i.id === id);
   if (issue) {
-    Object.assign(issue, updates);
+    for (const key of ISSUE_UPDATABLE_FIELDS) {
+      if (key in updates) {
+        (issue as Record<string, unknown>)[key] = (updates as Record<string, unknown>)[key];
+      }
+    }
     issue.fingerprint = buildIssueFingerprint(issue);
     await chrome.storage.local.set({ [ISSUES_KEY]: issues });
   }
+}
+
+// Project management
+
+export async function getProjects(): Promise<Project[]> {
+  const r = await chrome.storage.local.get(PROJECTS_KEY);
+  return (r[PROJECTS_KEY] as Project[]) || [];
+}
+
+export async function getActiveProjectId(): Promise<string | null> {
+  const r = await chrome.storage.local.get(ACTIVE_PROJECT_KEY);
+  return (r[ACTIVE_PROJECT_KEY] as string) || null;
+}
+
+export async function setActiveProjectId(id: string | null) {
+  await chrome.storage.local.set({ [ACTIVE_PROJECT_KEY]: id });
+}
+
+export async function saveProject(project: Project) {
+  const list = await getProjects();
+  const idx = list.findIndex(p => p.id === project.id);
+  const next = idx >= 0
+    ? list.map(p => p.id === project.id ? project : p)
+    : [...list, project];
+  await chrome.storage.local.set({ [PROJECTS_KEY]: next });
+}
+
+export async function deleteProject(id: string) {
+  const list = await getProjects();
+  const next = list.filter(p => p.id !== id);
+  await chrome.storage.local.set({ [PROJECTS_KEY]: next });
+}
+
+// User Notes
+
+export async function getUserNotes(): Promise<UserNote[]> {
+  const r = await chrome.storage.local.get(USER_NOTES_KEY);
+  return (r[USER_NOTES_KEY] as UserNote[]) || [];
+}
+
+export async function saveUserNote(note: UserNote) {
+  const list = await getUserNotes();
+  const idx = list.findIndex(n => n.id === note.id);
+  const next = idx >= 0
+    ? list.map(n => n.id === note.id ? note : n)
+    : [...list, note];
+  await chrome.storage.local.set({ [USER_NOTES_KEY]: next });
+}
+
+export async function deleteUserNote(id: string) {
+  const list = await getUserNotes();
+  const next = list.filter(n => n.id !== id);
+  await chrome.storage.local.set({ [USER_NOTES_KEY]: next });
 }
 
 export function analyzeIssues(issues: Issue[], actions: Action[] = []): IssueAnalysis {

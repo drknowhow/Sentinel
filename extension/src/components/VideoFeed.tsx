@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { VideoClip } from '../hooks/useVideoRecorder';
+import type { VideoClip } from '../types';
 
 interface VideoFeedProps {
   clips: VideoClip[];

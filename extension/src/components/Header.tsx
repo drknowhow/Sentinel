@@ -18,6 +18,8 @@ interface HeaderProps {
   wsConnected: boolean;
   contentScriptReady: boolean;
   activeTabUrl: string | null;
+  projects: import('../types').Project[];
+  activeProjectId: string | null;
 }
 
 function openGuideEditor() {
@@ -36,6 +38,7 @@ export default function Header({
   hasActions, errorCount, stepCount, issueCount, onToggleVideo,
   isInspecting, onToggleInspect,
   wsConnected, contentScriptReady, activeTabUrl,
+  projects, activeProjectId,
 }: HeaderProps) {
   const busy = isPlaying;
   const [syncBugTracking, setSyncBugTracking] = useState(true);
@@ -82,8 +85,35 @@ export default function Header({
     }
   };
 
+  const activeProject = projects.find(p => p.id === activeProjectId);
+
+  const handleProjectSelect = (id: string) => {
+    chrome.storage.local.set({ sentinel_active_project: id });
+  };
+
   return (
     <header className="bg-gray-900 text-white relative flex flex-col pt-2 pb-2 border-b border-gray-800 shadow-sm z-10 w-full shrink-0">
+      {/* Project Selector Mini-Bar */}
+      {projects.length > 0 && (
+        <div className="flex items-center px-3 mb-2 gap-2">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-gray-800 border border-gray-700 max-w-[140px]">
+            <svg className="w-3 h-3 text-cyan-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z" /><path d="M3 9V5a2 2 0 0 1 2-2h6l2 3h7a2 2 0 0 1 2 2v1" />
+            </svg>
+            <select 
+              value={activeProjectId || ''}
+              onChange={(e) => handleProjectSelect(e.target.value)}
+              className="bg-transparent text-[10px] font-bold text-gray-300 focus:outline-none cursor-pointer w-full"
+            >
+              {projects.map(p => (
+                <option key={p.id} value={p.id} className="bg-gray-900 text-white">{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="h-3 w-[1px] bg-gray-800" />
+          <span className="text-[9px] text-gray-500 font-medium truncate">{activeProject?.devUrl || 'No URL'}</span>
+        </div>
+      )}
       {/* Confirmation Modal */}
       {showRestartConfirm && (
         <div className="absolute top-10 right-4 z-50 bg-gray-900 border border-gray-700 rounded-lg shadow-xl p-3 w-64 shadow-[0_10px_40px_rgba(0,0,0,0.5)]">
@@ -129,10 +159,8 @@ export default function Header({
               ? 'bg-teal-900/40 text-teal-400 border border-teal-800/50'
               : 'bg-red-900/40 text-red-400 border border-red-800/50 cursor-pointer hover:bg-red-900/60'
               }`}
-              onClick={!contentScriptReady ? async () => {
-                const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-                if (tab?.id) await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/content.js'] });
-                chrome.storage.local.set({ contentScriptReady: true });
+              onClick={!contentScriptReady ? () => {
+                sendMessage('ATTACH_TAB');
               } : undefined}
               title={contentScriptReady ? 'Active on this tab' : 'Not attached - Click to repair'}
             >
