@@ -247,7 +247,7 @@ export async function updateIssue(id: string, updates: Partial<Issue>): Promise<
   if (issue) {
     for (const key of ISSUE_UPDATABLE_FIELDS) {
       if (key in updates) {
-        (issue as Record<string, unknown>)[key] = (updates as Record<string, unknown>)[key];
+        (issue as unknown as Record<string, unknown>)[key] = (updates as unknown as Record<string, unknown>)[key];
       }
     }
     issue.fingerprint = buildIssueFingerprint(issue);

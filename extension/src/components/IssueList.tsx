@@ -54,7 +54,7 @@ export default function IssueList({ issues, activeTabUrl }: IssueListProps) {
   }, [issues, filter, currentPageOnly, activeTabUrl]);
 
   const clusters = useMemo(() => analysis?.clusters || [], [analysis]);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const refreshTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     return () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); };
